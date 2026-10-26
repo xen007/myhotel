@@ -480,6 +480,66 @@ async function seedStaffAccounts(db) {
   await db.run("UPDATE users SET role = 'client' WHERE role IS NULL OR role = ''");
 }
 
+async function ensureRoomCatalog(db) {
+  await db.run("UPDATE rooms SET type = 'De luxe' WHERE LOWER(type) IN ('deluxe', 'de luxe', 'luxe')");
+  const photos = {
+    eco: 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1200&q=80',
+    standard: 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1200&q=80',
+    luxe: 'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1200&q=80',
+    suite: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200&q=80',
+    family: 'https://images.unsplash.com/photo-1595576508898-0ad5c879a061?w=1200&q=80',
+  };
+  const extras = [
+    ['104', 'Économique', 1, 'disponible', 28000, 1, photos.eco, 'Chambre économique, lit simple et salle d’eau, pour une nuit courte.'],
+    ['107', 'Économique', 1, 'disponible', 28000, 1, photos.eco, 'Chambre économique calme, côté cour.'],
+    ['108', 'Standard', 1, 'disponible', 45000, 2, photos.standard, 'Chambre standard avec bureau et climatisation.'],
+    ['109', 'De luxe', 1, 'disponible', 72000, 2, photos.luxe, 'Chambre de luxe avec minibar et dressing.'],
+    ['204', 'Économique', 2, 'disponible', 30000, 1, photos.eco, 'Chambre économique au deuxième étage.'],
+    ['205', 'Standard', 2, 'disponible', 45000, 2, photos.standard, 'Chambre standard lumineuse, deux personnes.'],
+    ['206', 'De luxe', 2, 'disponible', 78000, 2, photos.luxe, 'Chambre de luxe avec balcon intérieur.'],
+    ['207', 'Familiale', 2, 'disponible', 98000, 4, photos.family, 'Chambre familiale, deux lits et coin enfants.'],
+    ['208', 'Suite', 2, 'disponible', 135000, 3, photos.suite, 'Suite junior avec salon séparé.'],
+    ['305', 'Économique', 3, 'disponible', 32000, 2, photos.eco, 'Chambre économique avec vue dégagée.'],
+    ['306', 'De luxe', 3, 'disponible', 82000, 2, photos.luxe, 'Chambre de luxe, dernier étage.'],
+    ['307', 'Familiale', 3, 'disponible', 110000, 5, photos.family, 'Chambre familiale spacieuse, jusqu’à cinq personnes.'],
+    ['308', 'Suite', 3, 'disponible', 150000, 3, photos.suite, 'Suite avec salon, bureau et baignoire.'],
+    ['401', 'Standard', 4, 'disponible', 48000, 2, photos.standard, 'Chambre standard au quatrième étage.'],
+    ['402', 'De luxe', 4, 'disponible', 86000, 2, photos.luxe, 'Chambre de luxe avec grande baie vitrée.'],
+    ['403', 'Familiale', 4, 'disponible', 115000, 4, photos.family, 'Chambre familiale avec deux espaces nuit.'],
+    ['404', 'Suite', 4, 'disponible', 160000, 4, photos.suite, 'Suite familiale avec salon et chambre séparée.'],
+  ];
+  for (const row of extras) {
+    const existing = await db.get('SELECT id FROM rooms WHERE number = ?', [row[0]]);
+    if (existing) continue;
+    await db.run(
+      'INSERT INTO rooms (number, type, floor, status, price_night, capacity, photo, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      row,
+    );
+  }
+  const catalog = await db.all('SELECT id, name FROM equipment');
+  const byName = new Map(catalog.map((item) => [item.name, item.id]));
+  const kits = {
+    'Économique': ['Lit queen size', 'Wi-Fi haut débit', 'Douche à l’italienne'],
+    Standard: ['Lit queen size', 'Télévision 55"', 'Wi-Fi haut débit', 'Climatisation', 'Douche à l’italienne'],
+    'De luxe': ['Lit king size', 'Télévision 55"', 'Wi-Fi haut débit', 'Climatisation', 'Minibar', 'Douche à l’italienne'],
+    Suite: ['Lit king size', 'Télévision 55"', 'Wi-Fi haut débit', 'Climatisation', 'Minibar', 'Baignoire', 'Coffre-fort'],
+    Familiale: ['Lit king size', 'Canapé-lit', 'Télévision 55"', 'Wi-Fi haut débit', 'Climatisation', 'Douche à l’italienne'],
+  };
+  const added = await db.all('SELECT id, number, type FROM rooms');
+  for (const room of added) {
+    const names = kits[room.type];
+    if (!names) continue;
+    const linked = await db.get('SELECT room_id FROM room_equipment WHERE room_id = ? LIMIT 1', [room.id]);
+    if (linked) continue;
+    for (const name of names) {
+      const equipmentId = byName.get(name);
+      if (equipmentId) {
+        await db.run('INSERT OR IGNORE INTO room_equipment (room_id, equipment_id) VALUES (?, ?)', [room.id, equipmentId]);
+      }
+    }
+  }
+}
+
 async function openDatabase() {
   const cfg = mysqlSettings();
   const skipCreate = SERVERLESS || process.env.MYHOTEL_MYSQL_SKIP_CREATE === '1';
@@ -526,6 +586,7 @@ async function openDatabase() {
   await ensureSchema(db);
   await ensurePmsSchema(db);
   await seedIfEmpty(db);
+  await ensureRoomCatalog(db);
   await seedPms(db);
   await seedStaffAccounts(db);
   try {

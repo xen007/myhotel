@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { day } = require('./pms-seed');
 const { DATA_DIR } = require('./db');
+const { writeAudit, actorIdentity } = require('./audit');
 
 const CHAT_DIR = path.join(DATA_DIR, 'chat');
 const MAX_CHAT_FILE = 12 * 1024 * 1024;
@@ -73,7 +74,7 @@ async function reservationRows(db) {
 }
 
 async function planning(db) {
-  const rooms = await db.all('SELECT id, number, type, floor, status FROM rooms ORDER BY number');
+  const rooms = await db.all("SELECT id, number, type, floor, status, maintenance_level FROM rooms WHERE IFNULL(deleted_at, '') = '' ORDER BY number");
   const days = Array.from({ length: 10 }, (_, i) => day(i - 1));
   const res = await reservationRows(db);
   const cells = rooms.map((room) => ({
@@ -577,7 +578,9 @@ async function enrichRooms(db) {
   const stays = (await reservationRows(db)).filter((row) => row.status !== 'annulee' && row.status !== 'terminee');
   const tasks = await db.all('SELECT * FROM hk_tasks ORDER BY id DESC');
   const rooms = await db.all(
-    'SELECT id, number, type, floor, status, price_night, capacity, photo, video, description FROM rooms ORDER BY number',
+    `SELECT id, number, type, floor, status, price_night, capacity, photo, video, description,
+            maintenance_level, maintenance_note
+     FROM rooms WHERE IFNULL(deleted_at, '') = '' ORDER BY number`,
   );
   return rooms.map((room) => {
     const roomStays = stays
@@ -593,8 +596,9 @@ async function enrichRooms(db) {
     const covering = roomStays.filter((row) => row.start <= now && row.end > now);
     let nextFree = covering.length ? covering.map((row) => row.end).sort().pop() : now;
     const openTask = tasks.find((task) => task.room_number === room.number && !['pret', 'termine', 'controle'].includes(task.status));
-    const hkStatus = mapHkStatus(openTask?.status, room.status);
-    if (!current && (hkStatus === 'en_cours' || hkStatus === 'non_prise' || hkStatus === 'maintenance')) {
+    const light = room.status === 'maintenance' && room.maintenance_level === 'legere';
+    const hkStatus = light ? mapHkStatus(openTask?.status, null) : mapHkStatus(openTask?.status, room.status);
+    if (!current && !light && (hkStatus === 'en_cours' || hkStatus === 'non_prise' || hkStatus === 'maintenance')) {
       const eta = Number(openTask?.eta_minutes || 45);
       const later = new Date();
       later.setMinutes(later.getMinutes() + eta);
@@ -603,7 +607,7 @@ async function enrichRooms(db) {
     }
     let bucket = 'disponible';
     const hkBusy = hkStatus === 'en_cours' || hkStatus === 'non_prise' || hkStatus === 'maintenance';
-    if (room.status === 'maintenance' || hkStatus === 'maintenance') bucket = 'entretien';
+    if (room.status === 'maintenance' && !light) bucket = 'entretien';
     else if (current) bucket = 'occupee';
     else if (hkBusy || room.status === 'nettoyage') bucket = 'entretien';
     const [freeDate, freeTime] = String(nextFree).split(' ');
@@ -826,7 +830,7 @@ async function handlePms(req, res, ctx) {
 
   if (method === 'GET' && pathName === '/pms/purchasing') {
     const products = await db.all(
-      `SELECT p.*, w.name AS warehouse FROM products p JOIN warehouses w ON w.id = p.warehouse_id ORDER BY p.name`,
+      `SELECT p.*, w.name AS warehouse FROM products p JOIN warehouses w ON w.id = p.warehouse_id WHERE IFNULL(p.deleted_at, '') = '' ORDER BY p.name`,
     );
     ok(res, {
       products,
@@ -846,7 +850,7 @@ async function handlePms(req, res, ctx) {
     );
     ok(res, {
       products: await db.all(
-        "SELECT * FROM products WHERE kind = 'vente' OR kind IS NULL OR kind = '' ORDER BY name",
+        "SELECT * FROM products WHERE IFNULL(deleted_at, '') = '' AND (kind = 'vente' OR kind IS NULL OR kind = '') ORDER BY name",
       ),
       sales,
       items: await db.all('SELECT * FROM pos_sale_items'),
@@ -860,7 +864,7 @@ async function handlePms(req, res, ctx) {
       return true;
     }
     const products = await db.all(
-      `SELECT p.*, w.name AS warehouse FROM products p LEFT JOIN warehouses w ON w.id = p.warehouse_id ORDER BY p.name`,
+      `SELECT p.*, w.name AS warehouse FROM products p LEFT JOIN warehouses w ON w.id = p.warehouse_id WHERE IFNULL(p.deleted_at, '') = '' ORDER BY p.name`,
     );
     ok(res, {
       products,
@@ -917,7 +921,7 @@ async function handlePms(req, res, ctx) {
     const today = day(0);
     const reservations = await reservationRows(db);
     const products = await db.all(
-      `SELECT p.*, w.name AS warehouse FROM products p LEFT JOIN warehouses w ON w.id = p.warehouse_id ORDER BY p.name`,
+      `SELECT p.*, w.name AS warehouse FROM products p LEFT JOIN warehouses w ON w.id = p.warehouse_id WHERE IFNULL(p.deleted_at, '') = '' ORDER BY p.name`,
     );
     const sales = await Promise.all(
       (await db.all('SELECT * FROM pos_sales ORDER BY id DESC')).map((row) => saleDetail(db, row)),
@@ -947,13 +951,15 @@ async function handlePms(req, res, ctx) {
         cash_in: Number((await db.get("SELECT COALESCE(SUM(amount),0) AS n FROM cash_moves WHERE kind = 'entree' AND date(at) = date(?)", [today])).n || 0),
         cash_out: Number((await db.get("SELECT COALESCE(SUM(amount),0) AS n FROM cash_moves WHERE kind = 'sortie' AND date(at) = date(?)", [today])).n || 0),
       },
-      rooms: await db.all('SELECT id, number, type, status, price_night FROM rooms ORDER BY number'),
+      rooms: await db.all("SELECT id, number, type, status, price_night, maintenance_level FROM rooms WHERE IFNULL(deleted_at, '') = '' ORDER BY number"),
       reservations,
       sales,
       salesByOutlet,
       topProducts,
       products,
       moves: await db.all('SELECT * FROM stock_moves ORDER BY at DESC'),
+      maintenance: await db.all('SELECT * FROM room_maintenance ORDER BY id DESC LIMIT 300'),
+      discounts: await db.all('SELECT * FROM stay_discounts ORDER BY id DESC LIMIT 300'),
       issues,
       cash: await db.all('SELECT * FROM cash_moves ORDER BY at DESC'),
       guests: await db.all('SELECT * FROM guests ORDER BY full_name'),
@@ -962,8 +968,10 @@ async function handlePms(req, res, ctx) {
   }
 
   if (method === 'GET' && pathName === '/pms/schedule') {
-    if (actor.role !== 'manager' && actor.role !== 'owner') {
-      fail(res, 'Le planning est réservé à la gérance.', 403);
+    const manager = actor.role === 'manager' || actor.role === 'owner';
+    const employee = actor.role === 'receptionist' || actor.role === 'housekeeping';
+    if (!manager && !employee) {
+      fail(res, 'Le planning est réservé au personnel.', 403);
       return true;
     }
     let tasks = [];
@@ -978,11 +986,20 @@ async function handlePms(req, res, ctx) {
     } catch {
       jobs = [];
     }
+    let staff = await db.all(
+      "SELECT id, full_name, role, email FROM users WHERE role IN ('receptionist','housekeeping','manager','owner') AND IFNULL(status, 'actif') != 'banni' ORDER BY full_name",
+    );
+    let shifts = await db.all('SELECT * FROM staff_shifts ORDER BY day, start_hour');
+    if (!manager) {
+      const mine = (value) => String(value || '').trim().toLowerCase() === String(actor.full_name || '').trim().toLowerCase();
+      staff = staff.filter((row) => mine(row.full_name));
+      shifts = shifts.filter((row) => mine(row.staff_name));
+      jobs = jobs.filter((row) => mine(row.assignee));
+      tasks = tasks.filter((row) => mine(row.attendant) || mine(row.lead_name));
+    }
     ok(res, {
-      staff: await db.all(
-        "SELECT id, full_name, role, email FROM users WHERE role IN ('receptionist','housekeeping','manager','owner') AND IFNULL(status, 'actif') != 'banni' ORDER BY full_name",
-      ),
-      shifts: await db.all('SELECT * FROM staff_shifts ORDER BY day, start_hour'),
+      staff,
+      shifts,
       tasks,
       jobs,
     });
@@ -1110,9 +1127,20 @@ async function handlePms(req, res, ctx) {
       guest = await db.get('SELECT * FROM guests WHERE id = ?', [guest.id]);
     }
     const nights = Math.max(1, Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000));
+    const quote = quoteStay(room, nights, body, actor);
+    if (quote.error) {
+      fail(res, quote.error, quote.status || 400);
+      return true;
+    }
+    const openMaint = quote.level
+      ? await db.get(
+          "SELECT id FROM room_maintenance WHERE room_id = ? AND status = 'ouverte' ORDER BY id DESC LIMIT 1",
+          [room.id],
+        )
+      : null;
     await db.run(
-      `INSERT INTO reservations (guest_id, room_id, check_in, check_out, check_in_time, check_out_time, status, total, source, confirmed, notes, deposit_amount, adults, children)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO reservations (guest_id, room_id, check_in, check_out, check_in_time, check_out_time, status, total, source, confirmed, notes, deposit_amount, adults, children, list_total, discount_amount, discount_reason, discount_email, maintenance_level, maintenance_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         guest.id,
         room.id,
@@ -1121,16 +1149,55 @@ async function handlePms(req, res, ctx) {
         checkInTime,
         checkOutTime,
         source === 'walk_in' ? 'en_cours' : 'confirmee',
-        nights * Number(room.price_night),
+        quote.total,
         source,
         1,
         body.notes || null,
         Number(body.deposit_amount || 0),
         1 + extra.length,
         Number(body.children || 0),
+        quote.list,
+        quote.discount,
+        quote.reason,
+        quote.discount ? actorIdentity(actor).email : null,
+        quote.level,
+        openMaint ? openMaint.id : null,
       ],
     );
     const reservationId = await db.lastId();
+    if (quote.discount > 0) {
+      const who = actorIdentity(actor);
+      await db.run(
+        `INSERT INTO stay_discounts (reservation_id, room_id, room_number, list_price, discount_amount, final_price, reason, maintenance_id, maintenance_level, actor_id, actor_name, actor_email, actor_role, at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          reservationId,
+          room.id,
+          room.number,
+          quote.list,
+          quote.discount,
+          quote.total,
+          quote.reason,
+          openMaint ? openMaint.id : null,
+          quote.level,
+          who.userId,
+          who.name,
+          who.email,
+          who.role,
+          stampNow(),
+        ],
+      );
+    }
+    await writeAudit(db, actor, {
+      action: 'reservation.create',
+      entityType: 'reservation',
+      entityId: reservationId,
+      summary: `Réservation chambre ${room.number} · ${quote.total} FCFA`,
+      after: { list: quote.list, discount: quote.discount, total: quote.total, level: quote.level },
+      reason: quote.reason,
+      refType: 'room',
+      refId: room.id,
+    });
     const occupants = [
       { first_name: firstName, last_name: lastName, phone, document_id: documentId, is_primary: 1 },
       ...extra.map((row) => ({ ...row, is_primary: 0 })),
@@ -1216,10 +1283,37 @@ async function handlePms(req, res, ctx) {
       [guestName, firstName, lastName, phone, documentId, resv.guest_id],
     );
     const nights = Math.max(1, Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000));
+    const quote = quoteStay(room, nights, body, actor);
+    if (quote.error) {
+      fail(res, quote.error, quote.status || 400);
+      return true;
+    }
     await db.run(
-      `UPDATE reservations SET room_id=?, check_in=?, check_out=?, check_in_time=?, check_out_time=?, total=?, adults=? WHERE id=?`,
-      [room.id, checkIn, checkOut, checkInTime, checkOutTime, nights * Number(room.price_night), Number(body.adults || 1), id],
+      `UPDATE reservations SET room_id=?, check_in=?, check_out=?, check_in_time=?, check_out_time=?, total=?, adults=?, list_total=?, discount_amount=?, discount_reason=?, discount_email=?, maintenance_level=? WHERE id=?`,
+      [
+        room.id,
+        checkIn,
+        checkOut,
+        checkInTime,
+        checkOutTime,
+        quote.total,
+        Number(body.adults || 1),
+        quote.list,
+        quote.discount,
+        quote.reason,
+        quote.discount ? actorIdentity(actor).email : null,
+        quote.level,
+        id,
+      ],
     );
+    await writeAudit(db, actor, {
+      action: 'reservation.update',
+      entityType: 'reservation',
+      entityId: id,
+      summary: `Réservation ${id} mise à jour · chambre ${room.number}`,
+      before: { total: resv.total, room_id: resv.room_id },
+      after: { total: quote.total, room_id: room.id, discount: quote.discount },
+    });
     if (resv.room_id !== room.id) {
       await db.run("UPDATE rooms SET status = 'disponible' WHERE id = ?", [resv.room_id]);
       if (room.status === 'disponible') await db.run("UPDATE rooms SET status = 'reservee' WHERE id = ?", [room.id]);
@@ -1539,7 +1633,7 @@ async function handlePms(req, res, ctx) {
     for (const line of lines) {
       const product = await db.get('SELECT * FROM products WHERE id = ?', [Number(line.product_id)]);
       const qty = Number(line.qty || 0);
-      if (!product || qty <= 0) {
+      if (!product || product.deleted_at || qty <= 0) {
         fail(res, 'Produit ou quantité invalide.');
         return true;
       }
@@ -1688,7 +1782,7 @@ async function handlePms(req, res, ctx) {
       visits: await db.all('SELECT * FROM visits ORDER BY arrived_at DESC LIMIT 40'),
       staff: await db.all('SELECT id, full_name, role, department FROM staff WHERE status = ? ORDER BY full_name', ['actif']),
       products: await db.all('SELECT * FROM products ORDER BY name'),
-      rooms: await db.all('SELECT id, number, type, status, price_night FROM rooms ORDER BY number'),
+      rooms: await db.all("SELECT id, number, type, status, price_night, maintenance_level FROM rooms WHERE IFNULL(deleted_at, '') = '' ORDER BY number"),
     });
     return true;
   }
@@ -2125,14 +2219,69 @@ async function handlePms(req, res, ctx) {
   }
 
   if (method === 'POST' && pathName === '/pms/work-tasks/status') {
-    if (actor.role !== 'manager' && actor.role !== 'owner') {
-      fail(res, 'Seul le gérant peut clôturer une tâche.', 403);
+    const body = await readBody(req);
+    const row = await db.get('SELECT assignee FROM work_tasks WHERE id = ?', [Number(body.id)]);
+    if (!row) {
+      fail(res, 'Tâche introuvable.', 404);
       return true;
     }
-    const body = await readBody(req);
+    const mine = String(row.assignee || '').trim().toLowerCase() === String(actor.full_name || '').trim().toLowerCase();
+    const manager = actor.role === 'manager' || actor.role === 'owner';
+    if (!manager && !mine) {
+      fail(res, 'Vous ne pouvez mettre à jour que vos propres tâches.', 403);
+      return true;
+    }
     const status = body.status === 'fait' ? 'fait' : body.status === 'en_cours' ? 'en_cours' : 'a_faire';
     await db.run('UPDATE work_tasks SET status = ? WHERE id = ?', [status, Number(body.id)]);
     ok(res, { id: body.id, status }, 'Tâche mise à jour.');
+    return true;
+  }
+
+  if (method === 'GET' && pathName === '/pms/room-categories') {
+    ok(res, { categories: await db.all('SELECT id, name FROM room_categories ORDER BY sort_order, name') });
+    return true;
+  }
+
+  if (method === 'POST' && pathName === '/pms/room-categories') {
+    if (actor.role !== 'manager' && actor.role !== 'owner' && actor.role !== 'receptionist') {
+      fail(res, 'Vous ne pouvez pas créer de catégorie.', 403);
+      return true;
+    }
+    const body = await readBody(req);
+    const name = String(body.name || '').trim();
+    if (!name) {
+      fail(res, 'Indiquez le nom de la catégorie.');
+      return true;
+    }
+    const existing = await db.get('SELECT id FROM room_categories WHERE LOWER(name) = LOWER(?)', [name]);
+    if (existing) {
+      fail(res, 'Cette catégorie existe déjà.');
+      return true;
+    }
+    const last = await db.get('SELECT COALESCE(MAX(sort_order), 0) AS n FROM room_categories');
+    await db.run('INSERT INTO room_categories (name, sort_order) VALUES (?, ?)', [name, Number(last?.n || 0) + 1]);
+    ok(res, { id: await db.lastId(), name }, 'Catégorie créée.', 201);
+    return true;
+  }
+
+  if (method === 'POST' && pathName === '/pms/room-categories/delete') {
+    if (actor.role !== 'manager' && actor.role !== 'owner') {
+      fail(res, 'Seul le gérant peut retirer une catégorie.', 403);
+      return true;
+    }
+    const body = await readBody(req);
+    const row = await db.get('SELECT name FROM room_categories WHERE id = ?', [Number(body.id)]);
+    if (!row) {
+      fail(res, 'Catégorie introuvable.', 404);
+      return true;
+    }
+    const used = await db.get('SELECT COUNT(*) AS n FROM rooms WHERE type = ?', [row.name]);
+    if (Number(used?.n || 0) > 0) {
+      fail(res, 'Cette catégorie est utilisée par des chambres.');
+      return true;
+    }
+    await db.run('DELETE FROM room_categories WHERE id = ?', [Number(body.id)]);
+    ok(res, { id: body.id }, 'Catégorie retirée.');
     return true;
   }
 
@@ -2250,11 +2399,35 @@ async function handlePms(req, res, ctx) {
     }
     const body = await readBody(req);
     const id = Number(body.id);
-    await db.run('DELETE FROM room_photos WHERE room_id = ?', [id]);
-    await db.run('DELETE FROM room_videos WHERE room_id = ?', [id]);
-    await db.run('DELETE FROM room_equipment WHERE room_id = ?', [id]);
-    await db.run('DELETE FROM rooms WHERE id = ?', [id]);
-    ok(res, { id }, 'Chambre supprimée.');
+    const room = await db.get('SELECT * FROM rooms WHERE id = ?', [id]);
+    if (!room || room.deleted_at) {
+      fail(res, 'Chambre introuvable.');
+      return true;
+    }
+    const active = await db.get(
+      "SELECT COUNT(*) AS n FROM reservations WHERE room_id = ? AND status IN ('confirmee','en_cours')",
+      [id],
+    );
+    if (Number(active?.n || 0) > 0) {
+      fail(res, 'Cette chambre a une réservation active. Annulez ou terminez le séjour avant de la retirer.');
+      return true;
+    }
+    const who = actorIdentity(actor);
+    const when = stampNow();
+    await db.run('UPDATE rooms SET deleted_at = ?, deleted_by_email = ? WHERE id = ?', [when, who.email, id]);
+    await db.run(
+      `INSERT INTO trash_items (entity_type, entity_id, label, payload, deleted_at, deleted_by, deleted_by_email, deleted_role)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      ['room', String(id), `Chambre ${room.number}`, JSON.stringify({ number: room.number, type: room.type, status: room.status }), when, who.name, who.email, who.role],
+    );
+    await writeAudit(db, actor, {
+      action: 'room.delete',
+      entityType: 'room',
+      entityId: id,
+      summary: `Chambre ${room.number} placée dans la corbeille`,
+      before: { number: room.number, status: room.status },
+    });
+    ok(res, { id }, 'Chambre placée dans la corbeille.');
     return true;
   }
 
@@ -2270,30 +2443,75 @@ async function handlePms(req, res, ctx) {
       fail(res, 'Statut invalide.');
       return true;
     }
-    const room = await db.get('SELECT * FROM rooms WHERE id = ?', [id]);
+    const room = await db.get('SELECT * FROM rooms WHERE id = ? AND IFNULL(deleted_at, \'\') = \'\'', [id]);
     if (!room) {
       fail(res, 'Chambre introuvable.');
       return true;
     }
-    await db.run('UPDATE rooms SET status = ? WHERE id = ?', [status, id]);
+    const who = actorIdentity(actor);
+    const when = stampNow();
     if (status === 'disponible') {
       await db.run(
+        `UPDATE rooms SET status = 'disponible', maintenance_level = NULL, maintenance_note = NULL WHERE id = ?`,
+        [id],
+      );
+      await db.run(
+        `UPDATE room_maintenance SET status = 'cloturee', closed_at = ?, closed_by = ?, closed_by_email = ?
+         WHERE room_id = ? AND status = 'ouverte'`,
+        [when, who.name, who.email, id],
+      );
+      await db.run(
         "UPDATE hk_tasks SET status = 'pret', finished_at = COALESCE(finished_at, ?) WHERE room_number = ? AND status NOT IN ('pret','termine','controle')",
-        [stampNow(), room.number],
+        [when, room.number],
       );
-      await db.run(
-        `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-         VALUES ('ÉTAGES', 'Chambre prête', ?, '/rooms', 0, ?)`,
-        [`Chambre ${room.number} marquée prête par le gérant.`, stampNow()],
-      );
-    } else {
-      await db.run(
-        `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-         VALUES ('MAINTENANCE', 'Chambre indisponible', ?, '/rooms', 0, ?)`,
-        [`Chambre ${room.number} placée en maintenance.`, stampNow()],
-      );
+      await writeAudit(db, actor, {
+        action: 'room.maintenance.close',
+        entityType: 'room',
+        entityId: id,
+        summary: `Chambre ${room.number} remise en service`,
+        before: { status: room.status, level: room.maintenance_level },
+        after: { status: 'disponible' },
+      });
+      ok(res, { id, number: room.number, status: 'disponible' }, 'Chambre marquée prête.');
+      return true;
     }
-    ok(res, { id, number: room.number, status }, status === 'disponible' ? 'Chambre marquée prête.' : 'Chambre en maintenance.');
+    const level = body.level === 'legere' ? 'legere' : body.level === 'grave' ? 'grave' : '';
+    const description = String(body.description || '').trim();
+    if (!level || !description) {
+      fail(res, 'Choisissez le niveau (légère ou grave) et décrivez le problème.');
+      return true;
+    }
+    const active = await db.all(
+      `SELECT r.id, g.full_name AS guest_name, r.status FROM reservations r
+       JOIN guests g ON g.id = r.guest_id
+       WHERE r.room_id = ? AND r.status IN ('confirmee','en_cours')`,
+      [id],
+    );
+    const conflict = level === 'grave' && active.length
+      ? `Séjours conservés : ${active.map((row) => `#${row.id} ${row.guest_name} (${row.status})`).join(', ')}`
+      : null;
+    await db.run(
+      `UPDATE rooms SET status = 'maintenance', maintenance_level = ?, maintenance_note = ?, maintenance_at = ?, maintenance_by = ?, maintenance_by_email = ? WHERE id = ?`,
+      [level, description, when, who.name, who.email, id],
+    );
+    await db.run(
+      `INSERT INTO room_maintenance (room_id, room_number, level, description, status, started_at, opened_by, opened_by_email, opened_role, conflict_note)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [id, room.number, level, description, 'ouverte', when, who.name, who.email, who.role, conflict],
+    );
+    await writeAudit(db, actor, {
+      action: 'room.maintenance.open',
+      entityType: 'room',
+      entityId: id,
+      summary: `Chambre ${room.number} en maintenance ${level === 'legere' ? 'légère' : 'grave'}`,
+      reason: description,
+      after: { level, conflict },
+    });
+    ok(
+      res,
+      { id, number: room.number, status: 'maintenance', level, conflict },
+      conflict ? `Maintenance grave enregistrée. ${conflict}` : 'Chambre en maintenance.',
+    );
     return true;
   }
 
@@ -2421,21 +2639,33 @@ async function handlePms(req, res, ctx) {
       fail(res, `Stock insuffisant (${product.stock} restant).`);
       return true;
     }
+    const moveKind = ['perte', 'casse', 'perime', 'service', 'vente'].includes(String(body.kind || ''))
+      ? String(body.kind)
+      : 'service';
     await db.run('UPDATE products SET stock = stock - ? WHERE id = ?', [qty, product.id]);
+    const who = actorIdentity(actor);
     await db.run(
-      'INSERT INTO stock_moves (product_name, warehouse, type, qty, at, note, dest, actor, product_id) VALUES (?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO stock_moves (product_name, warehouse, type, qty, at, note, dest, actor, product_id, actor_email) VALUES (?,?,?,?,?,?,?,?,?,?)',
       [
         product.name,
         product.warehouse || 'Magasin',
-        'sortie',
+        moveKind,
         qty,
         stampNow(),
         String(body.note || '').trim() || 'Sortie magasin',
         takenBy,
-        actor.full_name,
+        who.name,
         product.id,
+        who.email,
       ],
     );
+    await writeAudit(db, actor, {
+      action: 'stock.out',
+      entityType: 'product',
+      entityId: product.id,
+      summary: `Sortie ${moveKind} · ${product.name} × ${qty}`,
+      reason: String(body.note || '').trim() || null,
+    });
     ok(res, { id: product.id, stock: Number(product.stock) - qty }, 'Sortie magasin enregistrée.');
     return true;
   }
@@ -2446,8 +2676,167 @@ async function handlePms(req, res, ctx) {
       return true;
     }
     const body = await readBody(req);
-    await db.run('DELETE FROM products WHERE id = ?', [Number(body.id)]);
-    ok(res, { id: body.id }, 'Produit supprimé.');
+    const product = await db.get('SELECT * FROM products WHERE id = ?', [Number(body.id)]);
+    if (!product || product.deleted_at) {
+      fail(res, 'Produit introuvable.');
+      return true;
+    }
+    const who = actorIdentity(actor);
+    const when = stampNow();
+    await db.run('UPDATE products SET deleted_at = ?, deleted_by_email = ? WHERE id = ?', [when, who.email, product.id]);
+    await db.run(
+      `INSERT INTO trash_items (entity_type, entity_id, label, payload, deleted_at, deleted_by, deleted_by_email, deleted_role)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      ['product', String(product.id), product.name, JSON.stringify({ stock: product.stock, price: product.price }), when, who.name, who.email, who.role],
+    );
+    await writeAudit(db, actor, {
+      action: 'product.delete',
+      entityType: 'product',
+      entityId: product.id,
+      summary: `Produit ${product.name} placé dans la corbeille`,
+    });
+    ok(res, { id: product.id }, 'Produit placé dans la corbeille.');
+    return true;
+  }
+
+  if (method === 'GET' && pathName === '/pms/trash') {
+    if (actor.role !== 'owner') {
+      fail(res, 'La corbeille est réservée au propriétaire.', 403);
+      return true;
+    }
+    ok(res, {
+      items: await db.all(
+        `SELECT * FROM trash_items WHERE restored_at IS NULL AND purged_at IS NULL ORDER BY id DESC`,
+      ),
+    });
+    return true;
+  }
+
+  if (method === 'POST' && pathName === '/pms/trash/restore') {
+    if (actor.role !== 'owner') {
+      fail(res, 'Seul le propriétaire peut restaurer un élément.', 403);
+      return true;
+    }
+    const body = await readBody(req);
+    const item = await db.get('SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL AND purged_at IS NULL', [Number(body.id)]);
+    if (!item) {
+      fail(res, 'Élément introuvable dans la corbeille.');
+      return true;
+    }
+    const who = actorIdentity(actor);
+    if (item.entity_type === 'room') {
+      const room = await db.get('SELECT * FROM rooms WHERE id = ?', [Number(item.entity_id)]);
+      if (!room) {
+        fail(res, 'La chambre d’origine n’existe plus.');
+        return true;
+      }
+      const clash = await db.get(
+        'SELECT id FROM rooms WHERE number = ? AND id != ? AND IFNULL(deleted_at, \'\') = \'\'',
+        [room.number, room.id],
+      );
+      if (clash) {
+        fail(res, `Une chambre ${room.number} est déjà active. Résolvez le conflit avant de restaurer.`);
+        return true;
+      }
+      await db.run('UPDATE rooms SET deleted_at = NULL, deleted_by_email = NULL WHERE id = ?', [room.id]);
+    } else if (item.entity_type === 'product') {
+      await db.run('UPDATE products SET deleted_at = NULL, deleted_by_email = NULL WHERE id = ?', [Number(item.entity_id)]);
+    } else {
+      fail(res, 'Ce type d’élément ne peut pas être restauré automatiquement.');
+      return true;
+    }
+    await db.run('UPDATE trash_items SET restored_at = ?, restored_by_email = ? WHERE id = ?', [stampNow(), who.email, item.id]);
+    await writeAudit(db, actor, {
+      action: 'trash.restore',
+      entityType: item.entity_type,
+      entityId: item.entity_id,
+      summary: `Restauration : ${item.label}`,
+      refType: 'trash',
+      refId: item.id,
+    });
+    ok(res, { id: item.id }, 'Élément restauré.');
+    return true;
+  }
+
+  if (method === 'POST' && pathName === '/pms/trash/purge') {
+    if (actor.role !== 'owner') {
+      fail(res, 'Seul le propriétaire peut supprimer définitivement.', 403);
+      return true;
+    }
+    const body = await readBody(req);
+    if (body.confirm !== 'SUPPRIMER') {
+      fail(res, 'Confirmation requise.');
+      return true;
+    }
+    const item = await db.get('SELECT * FROM trash_items WHERE id = ? AND restored_at IS NULL AND purged_at IS NULL', [Number(body.id)]);
+    if (!item) {
+      fail(res, 'Élément introuvable dans la corbeille.');
+      return true;
+    }
+    if (item.entity_type === 'room') {
+      const active = await db.get(
+        "SELECT COUNT(*) AS n FROM reservations WHERE room_id = ? AND status IN ('confirmee','en_cours')",
+        [Number(item.entity_id)],
+      );
+      if (Number(active?.n || 0) > 0) {
+        fail(res, 'Des séjours actifs empêchent la suppression définitive.');
+        return true;
+      }
+      await db.run('DELETE FROM room_photos WHERE room_id = ?', [Number(item.entity_id)]);
+      await db.run('DELETE FROM room_videos WHERE room_id = ?', [Number(item.entity_id)]);
+      await db.run('DELETE FROM room_equipment WHERE room_id = ?', [Number(item.entity_id)]);
+      await db.run('DELETE FROM rooms WHERE id = ?', [Number(item.entity_id)]);
+    } else if (item.entity_type === 'product') {
+      const moves = await db.get('SELECT COUNT(*) AS n FROM stock_moves WHERE product_id = ?', [Number(item.entity_id)]);
+      if (Number(moves?.n || 0) > 0) {
+        fail(res, 'Ce produit a des mouvements de stock. Conservez-le dans la corbeille pour l’historique.');
+        return true;
+      }
+      await db.run('DELETE FROM products WHERE id = ?', [Number(item.entity_id)]);
+    }
+    const who = actorIdentity(actor);
+    await db.run('UPDATE trash_items SET purged_at = ?, purged_by_email = ? WHERE id = ?', [stampNow(), who.email, item.id]);
+    await writeAudit(db, actor, {
+      action: 'trash.purge',
+      entityType: item.entity_type,
+      entityId: item.entity_id,
+      summary: `Suppression définitive : ${item.label}`,
+      reason: 'Confirmation propriétaire',
+      refType: 'trash',
+      refId: item.id,
+    });
+    ok(res, { id: item.id }, 'Élément supprimé définitivement.');
+    return true;
+  }
+
+  if (method === 'GET' && pathName === '/pms/audit') {
+    if (actor.role !== 'owner') {
+      fail(res, 'Le journal d’audit est réservé au propriétaire.', 403);
+      return true;
+    }
+    const url = new URL(req.url, 'http://localhost');
+    const email = String(url.searchParams.get('email') || '').trim().toLowerCase();
+    const action = String(url.searchParams.get('action') || '').trim().toLowerCase();
+    const entity = String(url.searchParams.get('entity') || '').trim().toLowerCase();
+    let rows = await db.all('SELECT id, at, user_id, email, role, action, entity_type, entity_id, summary, reason, ref_type, ref_id, result, row_hash FROM audit_log ORDER BY id DESC LIMIT 400');
+    if (email) rows = rows.filter((row) => String(row.email).toLowerCase().includes(email));
+    if (action) rows = rows.filter((row) => String(row.action).toLowerCase().includes(action));
+    if (entity) rows = rows.filter((row) => String(row.entity_type || '').toLowerCase().includes(entity) || String(row.entity_id || '') === entity);
+    ok(res, {
+      items: rows,
+      note: 'Chaque ligne est liée au compte authentifié (e-mail de session). La chaîne de hash détecte une altération du journal. Ce n’est pas une signature cryptographique de l’utilisateur.',
+    });
+    return true;
+  }
+
+  if (method === 'GET' && pathName === '/pms/room-maintenance') {
+    const url = new URL(req.url, 'http://localhost');
+    const roomId = Number(url.searchParams.get('room_id') || 0);
+    const rows = roomId
+      ? await db.all('SELECT * FROM room_maintenance WHERE room_id = ? ORDER BY id DESC', [roomId])
+      : await db.all('SELECT * FROM room_maintenance ORDER BY id DESC LIMIT 200');
+    const discounts = await db.all('SELECT * FROM stay_discounts ORDER BY id DESC LIMIT 200');
+    ok(res, { items: rows, discounts: roomId ? discounts.filter((row) => Number(row.room_id) === roomId) : discounts });
     return true;
   }
 
@@ -2458,6 +2847,42 @@ async function saleDetail(db, sale) {
   if (!sale) return null;
   const items = await db.all('SELECT * FROM pos_sale_items WHERE sale_id = ? ORDER BY id', [sale.id]);
   return { ...sale, items };
+}
+
+function quoteStay(room, nights, body, actor) {
+  const list = Math.max(0, nights) * Number(room.price_night || 0);
+  const level = room.status === 'maintenance' ? room.maintenance_level || 'grave' : null;
+  if (level === 'grave') {
+    return { error: 'Cette chambre est en maintenance grave et ne peut pas être louée.', status: 409 };
+  }
+  if (room.deleted_at) {
+    return { error: 'Cette chambre n’est plus disponible.', status: 404 };
+  }
+  const raw = body.final_price;
+  if (raw === undefined || raw === null || raw === '') {
+    return { list, discount: 0, total: list, reason: null, level };
+  }
+  const allowed = actor.role === 'receptionist' || actor.role === 'manager' || actor.role === 'owner';
+  if (!allowed) {
+    return { error: 'Vous n’êtes pas autorisé à accorder une réduction.', status: 403 };
+  }
+  if (level !== 'legere') {
+    return { error: 'Une réduction exceptionnelle n’est possible que pour une chambre en maintenance légère.' };
+  }
+  const finalPrice = Number(raw);
+  if (!Number.isFinite(finalPrice) || finalPrice < 0) {
+    return { error: 'Le prix final doit être un montant positif ou nul.' };
+  }
+  if (finalPrice > list + 0.001) {
+    return { error: 'Le prix négocié ne peut pas dépasser le tarif normal de la chambre.' };
+  }
+  return {
+    list,
+    discount: Math.max(0, list - finalPrice),
+    total: finalPrice,
+    reason: String(body.discount_reason || '').trim() || null,
+    level,
+  };
 }
 
 function stampNow() {

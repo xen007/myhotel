@@ -87,7 +87,8 @@ type FrontOffice = {
 
 function typeMeta(name: string, capacity: number): { icon: BoxIconName } {
   const key = name.toLowerCase();
-  if (key.includes('deluxe')) return { icon: 'star' };
+  if (key.includes('luxe') || key.includes('deluxe')) return { icon: 'star' };
+  if (key.includes('eco')) return { icon: 'bed' };
   if (key.includes('président') || key.includes('president')) return { icon: 'credit-card' };
   if (key.includes('suite')) return { icon: 'grid-alt' };
   if (key.includes('famil') || capacity >= 4) return { icon: 'group' };
@@ -221,7 +222,6 @@ export default function ReservationsScreen() {
   const [roomQuery, setRoomQuery] = useState('');
   const [query, setQuery] = useState('');
   const [stayStatus, setStayStatus] = useState('all');
-  const [stayType, setStayType] = useState('all');
   const [booking, setBooking] = useState<RoomRow | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [savedId, setSavedId] = useState<number | null>(null);
@@ -297,12 +297,10 @@ export default function ReservationsScreen() {
       const rank = (row: RoomRow) => (row.bucket === 'disponible' ? 0 : row.bucket === 'entretien' ? 1 : 2);
       return rank(a) - rank(b) || a.number.localeCompare(b.number, 'fr');
     });
-  const stayTypes = Array.from(new Set(stays.map((row) => row.room_type))).filter(Boolean);
   const visibleStays = stays.filter((row) => {
     const hay = `${row.guest_name} ${row.room_number} ${row.guest_phone ?? ''} ${row.document_id ?? ''}`.toLowerCase();
     if (query.trim() && !hay.includes(query.trim().toLowerCase())) return false;
     if (stayStatus !== 'all' && row.status !== stayStatus) return false;
-    if (stayType !== 'all' && row.room_type !== stayType) return false;
     return true;
   });
   const capacity = Math.max(1, booking?.capacity ?? 1);
@@ -545,9 +543,6 @@ export default function ReservationsScreen() {
               query={query}
               onQuery={setQuery}
               queryPlaceholder="Rechercher client, chambre..."
-              category={stayType}
-              onCategory={setStayType}
-              categories={[{ id: 'all', label: 'Tous les types' }, ...stayTypes.map((id) => ({ id, label: id }))]}
               status={stayStatus}
               onStatus={setStayStatus}
               statuses={[

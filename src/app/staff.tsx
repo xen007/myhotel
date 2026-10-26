@@ -63,7 +63,6 @@ export default function StaffScreen() {
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [form, setForm] = useState<FormState | null>(null);
   const [pendingBan, setPendingBan] = useState<Employee | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Employee | null>(null);
@@ -80,10 +79,9 @@ export default function StaffScreen() {
       const hay = `${item.full_name} ${item.email} ${item.phone ?? ''} ${item.role}`.toLowerCase();
       if (query.trim() && !hay.includes(query.trim().toLowerCase())) return false;
       if (roleFilter !== 'all' && item.role !== roleFilter) return false;
-      if (statusFilter !== 'all' && item.status !== statusFilter) return false;
       return true;
     });
-  }, [items, query, roleFilter, statusFilter]);
+  }, [items, query, roleFilter]);
 
   function openCreate() {
     setFormError(null);
@@ -169,13 +167,6 @@ export default function StaffScreen() {
         category={roleFilter}
         onCategory={setRoleFilter}
         categories={[{ id: 'all', label: 'Tous les rôles' }, ...ROLE_OPTIONS]}
-        status={statusFilter}
-        onStatus={setStatusFilter}
-        statuses={[
-          { id: 'all', label: 'Tous' },
-          { id: 'actif', label: 'Actifs' },
-          { id: 'banni', label: 'Bannis' },
-        ]}
       />
 
       <ScrollView horizontal={!isDesktop} showsHorizontalScrollIndicator={!isDesktop}>

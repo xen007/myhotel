@@ -10,7 +10,7 @@ import { HotelShell } from '@/components/hotel/hotel-shell';
 import { GoldBtn } from '@/components/hotel/kit';
 import { Palette } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
-import { pmsPost, roomRequest, roomsRequest, type EquipmentItem } from '@/lib/api';
+import { pmsGet, pmsPost, roomRequest, roomsRequest, type EquipmentItem } from '@/lib/api';
 import { roomStatusLabel } from '@/lib/format';
 
 type FormState = {
@@ -27,7 +27,7 @@ type FormState = {
 
 const emptyForm = (): FormState => ({
   number: '',
-  type: 'Deluxe',
+  type: 'Standard',
   floor: '1',
   capacity: '2',
   price_night: '72000',
@@ -38,7 +38,7 @@ const emptyForm = (): FormState => ({
 });
 
 const STATUS_OPTIONS = Object.entries(roomStatusLabel).map(([id, label]) => ({ id, label }));
-const DEFAULT_TYPES = ['Standard', 'Deluxe', 'Suite', 'Familiale', 'Présidentielle'];
+const DEFAULT_TYPES = ['Économique', 'Standard', 'De luxe', 'Suite', 'Familiale', 'Présidentielle'];
 
 async function toStoredUri(asset: ImagePicker.ImagePickerAsset) {
   if (asset.base64) {
@@ -79,6 +79,14 @@ export default function RoomFormScreen() {
     try {
       const catalog = await roomsRequest(token);
       const types = [...DEFAULT_TYPES];
+      try {
+        const payload = await pmsGet<{ categories: { name: string }[] }>(token, 'room-categories');
+        (payload.categories || []).forEach((item) => {
+          if (item.name && !types.includes(item.name)) types.push(item.name);
+        });
+      } catch {
+        /* les types déjà utilisés restent proposés */
+      }
       catalog.forEach((room) => {
         if (room.type && !types.includes(room.type)) types.push(room.type);
       });

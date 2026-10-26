@@ -1423,7 +1423,7 @@ function createRequestHandler(db) {
           await Promise.all(
             (
               await db.all(
-                'SELECT * FROM rooms ORDER BY number',
+                "SELECT * FROM rooms WHERE IFNULL(deleted_at, '') = '' ORDER BY number",
               )
             ).map(
               (room) =>
@@ -1468,7 +1468,7 @@ function createRequestHandler(db) {
             ],
           );
 
-        if (!room) {
+        if (!room || room.deleted_at) {
           fail(
             res,
             'Chambre introuvable.',

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Redirect } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '@/components/box-icon';
 import { FilterBar } from '@/components/hotel/filter-bar';
@@ -42,12 +42,13 @@ export default function PosScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [invoice, setInvoice] = useState<SaleInvoice | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [invoicesOpen, setInvoicesOpen] = useState(false);
 
   const products = useMemo(() => data?.products ?? [], [data?.products]);
   const sales = useMemo(() => data?.sales ?? [], [data?.sales]);
   const today = new Date().toISOString().slice(0, 10);
   const isDesktop = width >= Breakpoints.desktop;
-  const sideCart = width >= Breakpoints.tablet;
   const tableMin = 980;
 
   useEffect(() => {
@@ -82,6 +83,7 @@ export default function PosScreen() {
   }, [cart, products]);
 
   const cartTotal = lines.reduce((sum, line) => sum + line.qty * Number(line.product.price || 0), 0);
+  const cartCount = lines.reduce((sum, line) => sum + line.qty, 0);
 
   function add(product: Product) {
     if (Number(product.stock) <= 0) return;
@@ -115,6 +117,7 @@ export default function PosScreen() {
       setCart({});
       setGuest('');
       setRoom('');
+      setCartOpen(false);
       setInvoice(sale);
       await reload();
     } catch (err) {
@@ -127,8 +130,39 @@ export default function PosScreen() {
   if (ready && !user) return <Redirect href="/welcome" />;
 
   return (
-    <HotelShell title="Ventes" loading={loading && !data} error={error}>
-      <View style={[styles.shop, !sideCart && styles.shopStack]}>
+    <HotelShell
+      title="Vente"
+      loading={loading && !data}
+      error={error}
+      right={
+        <View style={styles.titleTools}>
+          <Pressable
+            accessibilityLabel="Panier"
+            onPress={() => {
+              setCartOpen((open) => !open);
+              setInvoicesOpen(false);
+            }}
+            style={styles.cartBtn}>
+            <AppIcon name="cart" size={20} color={Palette.ink} />
+            {cartCount > 0 ? (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{cartCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <GoldBtn
+            compact
+            icon="receipt"
+            label="Factures"
+            variant={invoicesOpen ? 'gold' : 'ghost'}
+            onPress={() => {
+              setInvoicesOpen((open) => !open);
+              setCartOpen(false);
+            }}
+          />
+        </View>
+      }>
+      <View style={styles.shop}>
         <View style={styles.catalogCol}>
           <FilterBar query={productQuery} onQuery={setProductQuery} queryPlaceholder="Rechercher un produit..." />
           <View style={styles.catalog}>
@@ -163,110 +197,156 @@ export default function PosScreen() {
           </View>
           {!visibleProducts.length ? <Text style={styles.empty}>Aucun produit ne correspond.</Text> : null}
         </View>
-
-        <View style={[styles.cart, sideCart && styles.cartSide]}>
-          <Text style={styles.section}>Panier</Text>
-          {lines.map((line) => (
-            <View key={line.product.id} style={styles.cartRow}>
-              <View style={styles.cartCopy}>
-                <Text style={styles.cartName} numberOfLines={1}>
-                  {line.product.name}
-                </Text>
-                <Text style={styles.cartPrice}>{money(line.qty * Number(line.product.price))}</Text>
-              </View>
-              <View style={styles.stepper}>
-                <Pressable onPress={() => dec(line.product.id)} style={styles.stepBtn}>
-                  <Text style={styles.stepLabel}>−</Text>
-                </Pressable>
-                <Text style={styles.stepQty}>{line.qty}</Text>
-                <Pressable onPress={() => add(line.product)} style={styles.stepBtn}>
-                  <Text style={styles.stepLabel}>+</Text>
-                </Pressable>
-              </View>
-            </View>
-          ))}
-          {!lines.length ? <Text style={styles.empty}>Sélectionnez un produit pour l’ajouter.</Text> : null}
-          <TextInput value={guest} onChangeText={setGuest} placeholder="Client (facultatif)" style={styles.input} />
-          <TextInput value={room} onChangeText={setRoom} placeholder="Chambre (facultatif)" style={styles.input} />
-          {formError ? <Text style={styles.formError}>{formError}</Text> : null}
-          <View style={styles.payRow}>
-            <Text style={styles.payTotal}>{money(cartTotal)}</Text>
-            <GoldBtn
-              compact
-              icon="wallet"
-              label={saving ? 'Encaissement…' : 'Encaisser'}
-              onPress={() => void checkout()}
-            />
-          </View>
-        </View>
       </View>
 
-      {invoice ? (
-        <View style={styles.invoiceBox}>
-          <Text style={styles.section}>Facture FAC-{String(invoice.id).padStart(5, '0')}</Text>
-          <View style={styles.invoiceActions}>
-            <GoldBtn compact icon="printer" label="Imprimer" onPress={() => printSaleInvoice(invoice, company ?? {})} />
-            <GoldBtn compact icon="download" label="Télécharger PDF" variant="ghost" onPress={() => downloadSaleInvoice(invoice, company ?? {})} />
-            <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setInvoice(null)} />
-          </View>
-        </View>
-      ) : null}
-
-      <Text style={styles.section}>Factures</Text>
-      <FilterBar
-        query={query}
-        onQuery={setQuery}
-        queryPlaceholder="Rechercher une facture..."
-        status={range}
-        onStatus={setRange}
-        statuses={[
-          { id: 'today', label: 'Aujourd’hui' },
-          { id: 'all', label: 'Toutes' },
-        ]}
-      />
-      <ScrollView horizontal={!isDesktop} showsHorizontalScrollIndicator={!isDesktop}>
-        <View style={[styles.table, { minWidth: isDesktop ? '100%' : tableMin, width: isDesktop ? '100%' : tableMin }]}>
-          <View style={[styles.tr, styles.th]}>
-            <Text style={[styles.td, styles.colRef, styles.thText]}>Facture</Text>
-            <Text style={[styles.td, styles.colClient, styles.thText]}>Client</Text>
-            <Text style={[styles.td, styles.colRoom, styles.thText]}>Chambre</Text>
-            <Text style={[styles.td, styles.colItems, styles.thText]}>Articles</Text>
-            <Text style={[styles.td, styles.colPrice, styles.thText, styles.num]}>Total</Text>
-            <Text style={[styles.td, styles.colDate, styles.thText]}>Date</Text>
-            <View style={[styles.td, styles.colActions]} />
-          </View>
-          {visibleSales.map((row, index) => (
-            <View key={row.id} style={[styles.tr, index % 2 ? styles.trAlt : null]}>
-              <Text style={[styles.td, styles.colRef, styles.cellStrong]}>FAC-{String(row.id).padStart(5, '0')}</Text>
-              <Text style={[styles.td, styles.colClient, styles.cellText]} numberOfLines={1}>
-                {row.guest_name || 'Comptant'}
-              </Text>
-              <Text style={[styles.td, styles.colRoom, styles.cellText]}>{row.room_number || '—'}</Text>
-              <Text style={[styles.td, styles.colItems, styles.cellText]} numberOfLines={1}>
-                {(row.items ?? []).map((item) => `${item.product_name} ×${item.qty}`).join(', ') || '—'}
-              </Text>
-              <Text style={[styles.td, styles.colPrice, styles.num, styles.cellStrong]}>{money(row.total)}</Text>
-              <Text style={[styles.td, styles.colDate, styles.cellMeta]}>{prettyStamp(row.at)}</Text>
-              <View style={[styles.td, styles.colActions, styles.actionRow]}>
-                <Pressable style={styles.iconBtn} onPress={() => printSaleInvoice(row, company ?? {})}>
-                  <AppIcon name="printer" size={15} color={Palette.ink} />
-                </Pressable>
-                <Pressable style={[styles.iconBtn, styles.iconGhost]} onPress={() => downloadSaleInvoice(row, company ?? {})}>
-                  <AppIcon name="download" size={15} color={Palette.ink} />
-                </Pressable>
-              </View>
+      <Modal visible={cartOpen} transparent animationType="fade" onRequestClose={() => setCartOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setCartOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.section}>Panier</Text>
+              <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setCartOpen(false)} />
             </View>
-          ))}
+            <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
+              {lines.map((line) => (
+                <View key={line.product.id} style={styles.cartRow}>
+                  <View style={styles.cartCopy}>
+                    <Text style={styles.cartName} numberOfLines={1}>
+                      {line.product.name}
+                    </Text>
+                    <Text style={styles.cartPrice}>{money(line.qty * Number(line.product.price))}</Text>
+                  </View>
+                  <View style={styles.stepper}>
+                    <Pressable onPress={() => dec(line.product.id)} style={styles.stepBtn}>
+                      <Text style={styles.stepLabel}>−</Text>
+                    </Pressable>
+                    <Text style={styles.stepQty}>{line.qty}</Text>
+                    <Pressable onPress={() => add(line.product)} style={styles.stepBtn}>
+                      <Text style={styles.stepLabel}>+</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+              {!lines.length ? <Text style={styles.empty}>Sélectionnez un produit pour l’ajouter.</Text> : null}
+              <TextInput value={guest} onChangeText={setGuest} placeholder="Client (facultatif)" style={styles.input} />
+              <TextInput value={room} onChangeText={setRoom} placeholder="Chambre (facultatif)" style={styles.input} />
+              {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+              <View style={styles.payRow}>
+                <Text style={styles.payTotal}>{money(cartTotal)}</Text>
+                <GoldBtn
+                  compact
+                  icon="wallet"
+                  label={saving ? 'Encaissement…' : 'Encaisser'}
+                  onPress={() => void checkout()}
+                />
+              </View>
+            </ScrollView>
+          </View>
         </View>
-      </ScrollView>
-      {!visibleSales.length ? <Text style={styles.empty}>Aucune facture dans ce filtre.</Text> : null}
+      </Modal>
+
+      <Modal visible={!!invoice} transparent animationType="fade" onRequestClose={() => setInvoice(null)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setInvoice(null)} />
+          <View style={styles.sheet}>
+            <Text style={styles.section}>Facture FAC-{invoice ? String(invoice.id).padStart(5, '0') : ''}</Text>
+            <View style={styles.invoiceActions}>
+              <GoldBtn compact icon="printer" label="Imprimer" onPress={() => invoice && printSaleInvoice(invoice, company ?? {})} />
+              <GoldBtn compact icon="download" label="Télécharger PDF" variant="ghost" onPress={() => invoice && downloadSaleInvoice(invoice, company ?? {})} />
+              <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setInvoice(null)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={invoicesOpen} transparent animationType="fade" onRequestClose={() => setInvoicesOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setInvoicesOpen(false)} />
+          <View style={[styles.sheet, styles.sheetWide]}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.section}>Factures</Text>
+              <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setInvoicesOpen(false)} />
+            </View>
+            <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
+              <FilterBar
+                query={query}
+                onQuery={setQuery}
+                queryPlaceholder="Rechercher une facture..."
+                status={range}
+                onStatus={setRange}
+                statuses={[
+                  { id: 'today', label: 'Aujourd’hui' },
+                  { id: 'all', label: 'Toutes' },
+                ]}
+              />
+              <ScrollView horizontal={!isDesktop} showsHorizontalScrollIndicator={!isDesktop}>
+                <View style={[styles.table, { minWidth: isDesktop ? '100%' : tableMin, width: isDesktop ? '100%' : tableMin }]}>
+                  <View style={[styles.tr, styles.th]}>
+                    <Text style={[styles.td, styles.colRef, styles.thText]}>Facture</Text>
+                    <Text style={[styles.td, styles.colClient, styles.thText]}>Client</Text>
+                    <Text style={[styles.td, styles.colRoom, styles.thText]}>Chambre</Text>
+                    <Text style={[styles.td, styles.colItems, styles.thText]}>Articles</Text>
+                    <Text style={[styles.td, styles.colPrice, styles.thText, styles.num]}>Total</Text>
+                    <Text style={[styles.td, styles.colDate, styles.thText]}>Date</Text>
+                    <View style={[styles.td, styles.colActions]} />
+                  </View>
+                  {visibleSales.map((row, index) => (
+                    <View key={row.id} style={[styles.tr, index % 2 ? styles.trAlt : null]}>
+                      <Text style={[styles.td, styles.colRef, styles.cellStrong]}>FAC-{String(row.id).padStart(5, '0')}</Text>
+                      <Text style={[styles.td, styles.colClient, styles.cellText]} numberOfLines={1}>
+                        {row.guest_name || 'Comptant'}
+                      </Text>
+                      <Text style={[styles.td, styles.colRoom, styles.cellText]}>{row.room_number || '—'}</Text>
+                      <Text style={[styles.td, styles.colItems, styles.cellText]} numberOfLines={1}>
+                        {(row.items ?? []).map((item) => `${item.product_name} ×${item.qty}`).join(', ') || '—'}
+                      </Text>
+                      <Text style={[styles.td, styles.colPrice, styles.num, styles.cellStrong]}>{money(row.total)}</Text>
+                      <Text style={[styles.td, styles.colDate, styles.cellMeta]}>{prettyStamp(row.at)}</Text>
+                      <View style={[styles.td, styles.colActions, styles.actionRow]}>
+                        <Pressable style={styles.iconBtn} onPress={() => printSaleInvoice(row, company ?? {})}>
+                          <AppIcon name="printer" size={15} color={Palette.ink} />
+                        </Pressable>
+                        <Pressable style={[styles.iconBtn, styles.iconGhost]} onPress={() => downloadSaleInvoice(row, company ?? {})}>
+                          <AppIcon name="download" size={15} color={Palette.ink} />
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+              {!visibleSales.length ? <Text style={styles.empty}>Aucune facture dans ce filtre.</Text> : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </HotelShell>
   );
 }
 
 const styles = StyleSheet.create({
-  shop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  shopStack: { flexDirection: 'column' },
+  titleTools: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+  cartBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Palette.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: Palette.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cartBadgeText: { color: Palette.gold, fontSize: 10, fontWeight: '800' },
+  shop: { gap: 12 },
   catalogCol: { flex: 1, minWidth: 0, gap: 8 },
   catalog: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   product: {
@@ -308,16 +388,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     lineHeight: 24,
   },
-  cart: {
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  overlayFill: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(20,22,34,0.55)',
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '86%',
     backgroundColor: Palette.white,
     borderRadius: Radius.card,
-    padding: 14,
-    gap: 8,
+    padding: 16,
+    gap: 12,
     borderWidth: 1,
     borderColor: Palette.gold,
-    width: '100%',
+    zIndex: 2,
   },
-  cartSide: { width: 320, flexShrink: 0 },
+  sheetWide: { maxWidth: 980 },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  sheetScroll: { flexGrow: 0 },
+  sheetBody: { gap: 8, paddingBottom: 4 },
   section: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
   cartRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   cartCopy: { flex: 1, minWidth: 0, gap: 2 },
@@ -350,14 +446,6 @@ const styles = StyleSheet.create({
   },
   payRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4 },
   payTotal: { color: Palette.ink, fontWeight: '800', fontSize: 22 },
-  invoiceBox: {
-    backgroundColor: Palette.white,
-    borderRadius: 16,
-    padding: 14,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: Palette.gold,
-  },
   invoiceActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   table: {
     borderRadius: 16,

@@ -570,6 +570,121 @@ async function ensurePmsSchema(db) {
   }
   await addColumn(db, 'reservations', 'check_in_time', "TEXT NOT NULL DEFAULT '14:00'");
   await addColumn(db, 'reservations', 'check_out_time', "TEXT NOT NULL DEFAULT '12:00'");
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS room_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )`,
+  );
+  const defaultCategories = ['Économique', 'Standard', 'De luxe', 'Suite', 'Familiale', 'Présidentielle'];
+  for (let index = 0; index < defaultCategories.length; index += 1) {
+    const name = defaultCategories[index];
+    if (!(await db.get('SELECT id FROM room_categories WHERE name = ?', [name]))) {
+      await db.run('INSERT INTO room_categories (name, sort_order) VALUES (?, ?)', [name, index + 1]);
+    }
+  }
+  await addColumn(db, 'rooms', 'maintenance_level', 'TEXT');
+  await addColumn(db, 'rooms', 'maintenance_note', 'TEXT');
+  await addColumn(db, 'rooms', 'maintenance_at', 'TEXT');
+  await addColumn(db, 'rooms', 'maintenance_by', 'TEXT');
+  await addColumn(db, 'rooms', 'maintenance_by_email', 'TEXT');
+  await addColumn(db, 'rooms', 'deleted_at', 'TEXT');
+  await addColumn(db, 'rooms', 'deleted_by_email', 'TEXT');
+  await addColumn(db, 'products', 'deleted_at', 'TEXT');
+  await addColumn(db, 'products', 'deleted_by_email', 'TEXT');
+  await addColumn(db, 'reservations', 'list_total', 'REAL');
+  await addColumn(db, 'reservations', 'discount_amount', 'REAL NOT NULL DEFAULT 0');
+  await addColumn(db, 'reservations', 'discount_reason', 'TEXT');
+  await addColumn(db, 'reservations', 'discount_email', 'TEXT');
+  await addColumn(db, 'reservations', 'maintenance_level', 'TEXT');
+  await addColumn(db, 'reservations', 'maintenance_id', 'INTEGER');
+  await addColumn(db, 'stock_moves', 'unit_cost', 'REAL');
+  await addColumn(db, 'stock_moves', 'actor_email', 'TEXT');
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS room_maintenance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      room_number TEXT NOT NULL,
+      level TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ouverte',
+      started_at TEXT NOT NULL,
+      closed_at TEXT,
+      opened_by TEXT,
+      opened_by_email TEXT,
+      opened_role TEXT,
+      closed_by TEXT,
+      closed_by_email TEXT,
+      conflict_note TEXT
+    )`,
+  );
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS stay_discounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reservation_id INTEGER NOT NULL,
+      room_id INTEGER,
+      room_number TEXT,
+      list_price REAL NOT NULL,
+      discount_amount REAL NOT NULL,
+      final_price REAL NOT NULL,
+      reason TEXT,
+      maintenance_id INTEGER,
+      maintenance_level TEXT,
+      actor_id INTEGER,
+      actor_name TEXT,
+      actor_email TEXT NOT NULL,
+      actor_role TEXT,
+      at TEXT NOT NULL
+    )`,
+  );
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      at TEXT NOT NULL,
+      user_id INTEGER,
+      email TEXT NOT NULL,
+      role TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      summary TEXT,
+      before_json MEDIUMTEXT,
+      after_json MEDIUMTEXT,
+      reason TEXT,
+      ref_type TEXT,
+      ref_id TEXT,
+      result TEXT NOT NULL DEFAULT 'ok',
+      prev_hash TEXT,
+      row_hash TEXT
+    )`,
+  );
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS trash_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      payload MEDIUMTEXT,
+      deleted_at TEXT NOT NULL,
+      deleted_by TEXT,
+      deleted_by_email TEXT NOT NULL,
+      deleted_role TEXT,
+      restored_at TEXT,
+      restored_by_email TEXT,
+      purged_at TEXT,
+      purged_by_email TEXT
+    )`,
+  );
+  await db.run(
+    `UPDATE rooms SET maintenance_level = 'grave'
+     WHERE status = 'maintenance' AND (maintenance_level IS NULL OR maintenance_level = '')`,
+  );
+  for (const row of await db.all('SELECT DISTINCT type AS name FROM rooms WHERE type IS NOT NULL AND type != \'\'')) {
+    if (!(await db.get('SELECT id FROM room_categories WHERE name = ?', [row.name]))) {
+      await db.run('INSERT INTO room_categories (name, sort_order) VALUES (?, ?)', [row.name, 50]);
+    }
+  }
   if (!await db.get('SELECT id FROM company_profile WHERE id = 1')) {
     await db.run(
       `INSERT INTO company_profile (id, name, legal_name, address, city, country, phone, email, website, nif, rccm, slogan)

@@ -77,7 +77,6 @@ export function RoleDashboard({
           <Kpi icon="calendar" label="Réservations" value={String(data.reservations.live)} hint={`${data.reservations.total} au total`} />
           <Kpi icon="receipt" label="Nb ventes" value={String(data.pos_count_today ?? 0)} hint="Aujourd’hui" />
           <Kpi icon="wallet" label="Total ventes" value={money(data.pos_today)} hint="Aujourd’hui" />
-          <Kpi icon="bulb" label="Suggestions" value={String(data.suggestions?.open ?? 0)} hint="En attente" />
         </View>
       ) : (
         <View style={styles.kpis}>
@@ -114,18 +113,10 @@ export function RoleDashboard({
             </View>
           </Card>
         </View>
-        <View style={styles.row}>
-          <Card title="Suggestions" hint="Suivi des propositions">
-            <View style={styles.mini}>
-              <Mini label="En attente" value={String(data.suggestions?.open ?? 0)} />
-              <Mini label="Total" value={String(data.suggestions?.total ?? 0)} />
-            </View>
-          </Card>
-        </View>
         </>
       ) : (
       <View style={styles.row}>
-        <Card title={hk ? 'Répartition des chambres' : 'Occupation'} hint={hk ? 'Étages' : `${data.occupancy_pct} % aujourd’hui`}>
+        <Card title={hk ? 'Répartition des chambres' : 'Occupation'} hint={hk ? 'Statut' : `${data.occupancy_pct} % aujourd’hui`}>
           <View style={styles.donutRow}>
             <Donut slices={hk ? hkSlices : roomSlices} center={hk ? String(data.rooms.total) : `${data.occupancy_pct}%`} caption={hk ? 'chambres' : 'occupation'} />
             <View style={styles.legend}>
@@ -182,7 +173,7 @@ export function RoleDashboard({
                 <Mini label="Somme des ventes" value={money(data.pos_today)} />
               </View>
             </Card>
-            <Card title="Étages" hint="À surveiller">
+            <Card title="Statut" hint="À surveiller">
               <View style={styles.mini}>
                 <Mini label="Urgences" value={String(data.housekeeping.urgente)} />
                 <Mini label="Non prises" value={String(data.housekeeping.non_prise)} />

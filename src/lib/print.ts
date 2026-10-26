@@ -1,4 +1,27 @@
-import { Alert, Platform } from 'react-native';
+import { deliverPdf } from '@/lib/pdf';
+
+function htmlToLines(html: string) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h1|h2|h3|li|header|footer|article|section)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function emitDocument(filename: string, title: string, html: string, mode: 'download' | 'print') {
+  const lines = htmlToLines(html);
+  void deliverPdf(filename, title, lines.length ? lines : [title], mode);
+}
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => {
@@ -38,34 +61,11 @@ function wrapHtml(title: string, inner: string) {
 }
 
 export function printHtml(title: string, inner: string) {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    Alert.alert('Impression', 'Ouvrez MyHotel sur le web pour imprimer ou enregistrer en PDF.');
-    return;
-  }
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=760,height=900');
-  if (!popup) {
-    window.alert('Autorisez les pop-ups pour imprimer.');
-    return;
-  }
-  popup.document.write(wrapHtml(title, inner));
-  popup.document.close();
-  popup.focus();
-  popup.print();
+  emitDocument(`${title}.pdf`, title, wrapHtml(title, inner), 'print');
 }
 
 export function downloadReport(filename: string, title: string, inner: string) {
-  if (Platform.OS !== 'web' || typeof document === 'undefined') {
-    printHtml(title, inner);
-    return;
-  }
-  const blob = new Blob([wrapHtml(title, inner)], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename.endsWith('.pdf') || filename.endsWith('.html') ? filename.replace(/\.pdf$/i, '.html') : `${filename}.html`;
-  link.click();
-  URL.revokeObjectURL(url);
-  printHtml(title, inner);
+  emitDocument(filename, title, wrapHtml(title, inner), 'download');
 }
 
 export function printGuestBadges(
@@ -108,66 +108,7 @@ export function printGuestBadges(
     })
     .join('');
 
-  if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    Alert.alert('Impression', 'Ouvrez MyHotel sur le web pour imprimer les badges.');
-    return;
-  }
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=760');
-  if (!popup) {
-    window.alert('Autorisez les pop-ups pour imprimer les badges.');
-    return;
-  }
-  popup.document.write(`<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8" />
-  <title>Badges clients — MyHotel</title>
-  <style>
-    body { margin: 28px; background: #fff; font-family: Georgia, 'Times New Roman', serif; color: #141622; }
-    h1 { font-size: 18px; margin: 0 0 18px; }
-    .grid { display: flex; flex-wrap: wrap; gap: 28px; }
-    .card {
-      position: relative;
-      width: 86mm;
-      height: 54mm;
-      border-radius: 14px;
-      background: #141622;
-      color: #fff;
-      padding: 14px 16px;
-      box-sizing: border-box;
-      overflow: hidden;
-      border: 1px solid #D4AF37;
-      transform: perspective(700px) rotateY(-12deg) rotateX(6deg);
-      box-shadow: 12px 18px 28px rgba(20,22,34,.35);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .shine {
-      position: absolute; top: -20px; right: -24px; width: 90px; height: 160px;
-      background: #D4AF37; opacity: .18; transform: rotate(24deg);
-    }
-    .row { display: flex; justify-content: space-between; align-items: flex-start; }
-    .brand { color: #D4AF37; letter-spacing: 2px; text-transform: uppercase; font-weight: 800; font-size: 11px; }
-    .chip { width: 34px; height: 24px; border-radius: 5px; background: linear-gradient(135deg,#F4E3A1,#D4AF37,#B8942A); }
-    .pan { letter-spacing: 2px; font-size: 15px; font-weight: 700; margin-top: 8px; }
-    .label { color: #D4AF37; font-size: 8px; letter-spacing: 1px; text-transform: uppercase; font-weight: 800; }
-    .name { font-size: 13px; font-weight: 800; letter-spacing: .4px; }
-    .valid, .hours, .code { font-size: 10px; color: #D4AF37; }
-    @media print {
-      button { display: none; }
-      .card { transform: none; box-shadow: none; page-break-inside: avoid; }
-    }
-  </style>
-</head>
-<body>
-  <h1>Badges d’accès chambre</h1>
-  <div class="grid">${cards}</div>
-</body>
-</html>`);
-  popup.document.close();
-  popup.focus();
-  popup.print();
+  emitDocument('badges-acces.pdf', 'Badges d’accès chambre', cards, 'print');
 }
 
 export function printReceipt(opts: {
@@ -340,36 +281,12 @@ function voucherHtml(stay: ReservationVoucher, company: CompanyVoucher = {}, sta
 }
 
 function openVoucher(stay: ReservationVoucher, company: CompanyVoucher, statusLabel: string, mode: 'print' | 'download') {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    Alert.alert('Document', 'Ouvrez MyHotel sur le web pour imprimer ou télécharger le rapport.');
-    return;
-  }
-  const html = voucherHtml(stay, company, statusLabel);
-  if (mode === 'download' && typeof document !== 'undefined') {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `reservation-MH-${String(stay.id).padStart(5, '0')}.html`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1100');
-  if (!popup) {
-    window.alert('Autorisez les pop-ups pour imprimer ou enregistrer le PDF.');
-    return;
-  }
-  popup.document.write(html);
-  popup.document.close();
-  popup.focus();
-  popup.onload = () => popup.print();
-  setTimeout(() => {
-    try {
-      popup.print();
-    } catch {
-      /* ignore */
-    }
-  }, 400);
+  emitDocument(
+    `reservation-MH-${String(stay.id).padStart(5, '0')}.pdf`,
+    `Réservation MH-${String(stay.id).padStart(5, '0')}`,
+    voucherHtml(stay, company, statusLabel),
+    mode,
+  );
 }
 
 export function printReservationReport(stay: ReservationVoucher, company: CompanyVoucher = {}, statusLabel?: string) {
@@ -485,35 +402,12 @@ function saleInvoiceHtml(sale: SaleInvoice, company: CompanyVoucher = {}) {
 }
 
 function openSaleInvoice(sale: SaleInvoice, company: CompanyVoucher, mode: 'print' | 'download') {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    Alert.alert('Facture', 'Ouvrez MyHotel sur le web pour imprimer ou télécharger la facture.');
-    return;
-  }
-  const html = saleInvoiceHtml(sale, company);
-  if (mode === 'download' && typeof document !== 'undefined') {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `facture-FAC-${String(sale.id).padStart(5, '0')}.html`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1100');
-  if (!popup) {
-    window.alert('Autorisez les pop-ups pour imprimer ou enregistrer le PDF.');
-    return;
-  }
-  popup.document.write(html);
-  popup.document.close();
-  popup.focus();
-  setTimeout(() => {
-    try {
-      popup.print();
-    } catch {
-      /* ignore */
-    }
-  }, 400);
+  emitDocument(
+    `facture-FAC-${String(sale.id).padStart(5, '0')}.pdf`,
+    `Facture FAC-${String(sale.id).padStart(5, '0')}`,
+    saleInvoiceHtml(sale, company),
+    mode,
+  );
 }
 
 export function printSaleInvoice(sale: SaleInvoice, company: CompanyVoucher = {}) {
@@ -599,35 +493,7 @@ function pmsReportHtml(doc: PmsReportDoc, company: CompanyVoucher = {}) {
 }
 
 function openPmsReport(doc: PmsReportDoc, company: CompanyVoucher, mode: 'print' | 'download') {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    Alert.alert('Rapport', 'Ouvrez MyHotel sur le web pour imprimer ou télécharger.');
-    return;
-  }
-  const html = pmsReportHtml(doc, company);
-  if (mode === 'download' && typeof document !== 'undefined') {
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${doc.title.replace(/\s+/g, '-').toLowerCase()}.html`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800');
-  if (!popup) {
-    window.alert('Autorisez les pop-ups pour imprimer.');
-    return;
-  }
-  popup.document.write(html);
-  popup.document.close();
-  popup.focus();
-  setTimeout(() => {
-    try {
-      popup.print();
-    } catch {
-      /* ignore */
-    }
-  }, 400);
+  emitDocument(`${doc.title.replace(/\s+/g, '-').toLowerCase()}.pdf`, doc.title, pmsReportHtml(doc, company), mode);
 }
 
 export function printPmsReport(doc: PmsReportDoc, company: CompanyVoucher = {}) {

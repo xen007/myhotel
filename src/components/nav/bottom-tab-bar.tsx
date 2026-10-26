@@ -8,10 +8,10 @@ import type { WorkspaceLink } from '@/constants/roles';
 
 const TAB_ORDER = [
   '/home',
+  '/schedule',
   '/reservations',
   '/pos',
   '/messages',
-  '/suggestions',
   '/housekeeping',
   '/issues',
   '/rooms',
@@ -20,8 +20,8 @@ const TAB_ORDER = [
 
 const SHORT_LABEL: Record<string, string> = {
   '/home': 'Accueil',
-  '/housekeeping': 'Étages',
-  '/suggestions': 'Sugg.',
+  '/schedule': 'Planning',
+  '/housekeeping': 'Statut',
   '/messages': 'Msg.',
   '/issues': 'Signal.',
   '/reservations': 'Réserv.',

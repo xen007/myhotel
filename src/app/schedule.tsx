@@ -158,9 +158,121 @@ export default function ScheduleScreen() {
   }
 
   if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && !canManage) return <Redirect href="/home" />;
+  if (ready && user && !canManage && user.role !== 'receptionist' && user.role !== 'housekeeping') {
+    return <Redirect href="/home" />;
+  }
 
   const weekLabel = `${prettyDate(days[0])} — ${prettyDate(days[6])}`;
+  const mine = (value?: string | null) =>
+    String(value || '').trim().toLowerCase() === String(user?.full_name || '').trim().toLowerCase();
+  const myShifts = shifts.filter((row) => mine(row.staff_name));
+  const myJobs = jobs.filter((row) => mine(row.assignee));
+  const myRooms = hk.filter((row) => mine(row.attendant));
+
+  if (ready && !canManage) {
+    return (
+      <HotelShell title="Mon planning" loading={loading && !data} error={error}>
+        <View style={[styles.weekBar, isMobile && styles.weekBarMobile]}>
+          {isMobile ? (
+            <Pressable onPress={() => setAnchor(addDays(anchor, -7))} hitSlop={8} style={styles.weekNav}>
+              <AppIcon name="chevron-left" size={18} color={Palette.ink} />
+            </Pressable>
+          ) : (
+            <GoldBtn tiny icon="chevron-left" label="Semaine" variant="ghost" onPress={() => setAnchor(addDays(anchor, -7))} />
+          )}
+          <View style={styles.weekCopy}>
+            {isMobile ? null : <Text style={styles.weekKicker}>Semaine</Text>}
+            <Text
+              numberOfLines={1}
+              style={[styles.weekLabel, isMobile && styles.weekLabelMobile, Platform.OS === 'web' ? ({ whiteSpace: 'nowrap' } as object) : null]}>
+              {weekLabel}
+            </Text>
+          </View>
+          {isMobile ? (
+            <Pressable onPress={() => setAnchor(addDays(anchor, 7))} hitSlop={8} style={styles.weekNav}>
+              <AppIcon name="chevron-right" size={18} color={Palette.ink} />
+            </Pressable>
+          ) : (
+            <GoldBtn tiny icon="chevron-right" label="Suivante" variant="ghost" onPress={() => setAnchor(addDays(anchor, 7))} />
+          )}
+        </View>
+
+        <View style={styles.panel}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>Mon emploi du temps</Text>
+            <Text style={styles.panelCount}>{myShifts.filter((row) => days.includes(String(row.day).slice(0, 10))).length}</Text>
+          </View>
+          {days.map((day, index) => {
+            const cell = myShifts.find((row) => String(row.day).slice(0, 10) === day);
+            return (
+              <View key={day} style={styles.mineDay}>
+                <View style={styles.mineWhen}>
+                  <Text style={styles.name}>{WEEKDAYS[index]}</Text>
+                  <Text style={styles.role}>{prettyDate(day)}</Text>
+                </View>
+                {cell ? (
+                  <View style={styles.jobCopy}>
+                    <Text style={styles.name}>
+                      {String(cell.start_hour).slice(0, 5)}–{String(cell.end_hour).slice(0, 5)}
+                    </Text>
+                    <Text style={styles.role}>{cell.task || 'Service'}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.role}>Repos</Text>
+                )}
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={styles.panel}>
+          <View style={styles.panelHead}>
+            <Text style={styles.panelTitle}>Mes tâches</Text>
+            <Text style={styles.panelCount}>{myJobs.length}</Text>
+          </View>
+          {myJobs.map((item) => (
+            <View key={item.id} style={styles.job}>
+              <View style={styles.jobCopy}>
+                <Text style={styles.name}>{item.title}</Text>
+                <Text style={styles.role}>{prettyDate(item.day)}</Text>
+                {item.notes ? <Text style={styles.note}>{item.notes}</Text> : null}
+              </View>
+              <StatusBadge label={jobLabel(item.status)} tone={jobTone(item.status)} />
+              {item.status !== 'fait' ? (
+                <GoldBtn
+                  tiny
+                  label={item.status === 'a_faire' ? 'Démarrer' : 'Terminer'}
+                  onPress={() => void setJobStatus(item, item.status === 'a_faire' ? 'en_cours' : 'fait')}
+                />
+              ) : null}
+            </View>
+          ))}
+          {!myJobs.length ? <Text style={styles.empty}>Aucune tâche à effectuer.</Text> : null}
+        </View>
+
+        {myRooms.length ? (
+          <View style={styles.panel}>
+            <View style={styles.panelHead}>
+              <Text style={styles.panelTitle}>Chambres à traiter</Text>
+              <Text style={styles.panelCount}>{myRooms.length}</Text>
+            </View>
+            {myRooms.map((task) => (
+              <View key={task.id} style={styles.job}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{task.room_number}</Text>
+                </View>
+                <View style={styles.jobCopy}>
+                  <Text style={styles.name}>Chambre {task.room_number}</Text>
+                  <Text style={styles.role}>{task.status}</Text>
+                </View>
+                <StatusBadge label={task.priority === 'urgente' ? 'Urgence' : 'Statut'} tone={task.priority === 'urgente' ? 'gold' : 'muted'} />
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </HotelShell>
+    );
+  }
 
   return (
     <HotelShell
@@ -297,7 +409,7 @@ export default function ScheduleScreen() {
                 <Text style={styles.name}>Chambre {task.room_number}</Text>
                 <Text style={styles.role}>{task.attendant || 'Non prise'} · {task.status}</Text>
               </View>
-              <StatusBadge label={task.priority === 'urgente' ? 'Urgence' : 'Étages'} tone={task.priority === 'urgente' ? 'gold' : 'muted'} />
+              <StatusBadge label={task.priority === 'urgente' ? 'Urgence' : 'Statut'} tone={task.priority === 'urgente' ? 'gold' : 'muted'} />
             </View>
           ))}
           {!hk.length ? <Text style={styles.empty}>Aucune chambre ouverte à l’entretien.</Text> : null}
@@ -551,6 +663,16 @@ const styles = StyleSheet.create({
   jobActions: { flexShrink: 0 },
   note: { color: Palette.ink, opacity: 0.55, fontSize: 12 },
   empty: { color: Palette.ink, opacity: 0.6, padding: 12 },
+  mineDay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(20,22,34,0.06)',
+  },
+  mineWhen: { width: 110 },
   fields: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   field: { minWidth: 140, flexGrow: 1, flexBasis: 140, gap: 6 },
   fieldWide: { minWidth: '100%', gap: 6 },

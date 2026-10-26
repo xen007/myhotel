@@ -46,7 +46,7 @@ const KINDS = [
   { id: 'hebergement', label: 'Hébergement' },
   { id: 'ventes', label: 'Ventes' },
   { id: 'stocks', label: 'Stocks' },
-  { id: 'entretien', label: 'Étages' },
+  { id: 'entretien', label: 'Statut' },
   { id: 'caisse', label: 'Caisse' },
   { id: 'clients', label: 'Clients' },
   { id: 'resultat', label: 'Résultat' },
@@ -233,7 +233,7 @@ export default function ReportsScreen() {
     }
     if (kind === 'entretien') {
       return {
-        title: 'Étages',
+        title: 'Statut',
         columns: ['Chambre', 'Détail', 'Statut', 'Agent', 'Date'],
         rows: issues.map((item) => [item.room_number, item.description, item.status, item.reporter, prettyStamp(item.at)]),
       };

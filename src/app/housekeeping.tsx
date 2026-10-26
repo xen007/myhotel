@@ -80,7 +80,7 @@ function cardStatus(task: HkTask, room?: HkRoom) {
 
 export default function HousekeepingScreen() {
   const { data, error, loading, reload, token, user, ready } = usePms<Payload>('housekeeping');
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [modal, setModal] = useState<ModalKind>(null);
@@ -251,7 +251,8 @@ export default function HousekeepingScreen() {
   if (ready && user?.role === 'receptionist') return <Redirect href="/home" />;
 
   const isDesktop = width >= Breakpoints.desktop;
-  const cols = isDesktop ? 4 : width >= Breakpoints.tablet ? 3 : 2;
+  const phone = Math.min(width, height) < 600;
+  const cols = phone ? 1 : isDesktop ? 4 : width >= 900 ? 3 : 2;
   const available = (isDesktop ? width - 248 : width) - 36;
   const cardWidth = Math.max(148, Math.floor((available - (cols - 1) * 10) / cols));
   const agentHits = agents.filter((agent) => {

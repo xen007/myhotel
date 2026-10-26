@@ -2,7 +2,11 @@ import { Redirect, useRouter, type Href } from 'expo-router';
 import { isStaffRole } from '@/constants/roles';
 import { useAuth } from '@/context/auth-context';
 import { HotelShell } from '@/components/hotel/hotel-shell';
+import { GoldBtn } from '@/components/hotel/kit';
 import { RoleDashboard, type DashPayload } from '@/components/hotel/role-dashboard';
+import { pmsGet } from '@/lib/api';
+import { money } from '@/lib/format';
+import { deliverPdf } from '@/lib/pdf';
 import { Palette } from '@/constants/theme';
 import { AppBar } from '@/components/nav/app-bar';
 import { RightDrawer } from '@/components/nav/right-drawer';
@@ -28,13 +32,83 @@ export default function HomeScreen() {
 }
 
 function StaffHome() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { data, error, loading } = usePms<DashPayload>('dashboard');
+  const receptionist = user?.role === 'receptionist';
   return (
-    <HotelShell title="Tableau de bord" loading={loading && !data} error={error}>
+    <HotelShell
+      title="Tableau de bord"
+      loading={loading && !data}
+      error={error}
+      right={
+        receptionist && token ? (
+          <GoldBtn
+            tiny
+            icon="download"
+            label="Mon rapport"
+            onPress={() => void downloadReceptionDay(token, user?.full_name || 'Réception')}
+          />
+        ) : null
+      }>
       {data ? <RoleDashboard data={data} role={user?.role} name={user?.full_name} /> : null}
     </HotelShell>
   );
+}
+
+async function downloadReceptionDay(token: string, name: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [pos, office] = await Promise.all([
+    pmsGet<{
+      sales: {
+        id: number;
+        seller?: string | null;
+        guest_name?: string | null;
+        room_number?: string | null;
+        total: number;
+        at: string;
+      }[];
+    }>(token, 'pos'),
+    pmsGet<{
+      reservations: {
+        guest_name: string;
+        room_number: string;
+        room_type?: string;
+        check_in: string;
+        check_out: string;
+        status: string;
+        total: number;
+      }[];
+    }>(token, 'front-office'),
+  ]);
+  const sales = (pos.sales || []).filter(
+    (row) => (row.seller || '') === name && String(row.at || '').slice(0, 10) === today,
+  );
+  const stays = (office.reservations || []).filter((row) => {
+    const arrival = String(row.check_in).slice(0, 10);
+    const departure = String(row.check_out).slice(0, 10);
+    return arrival === today || departure === today || row.status === 'en_cours';
+  });
+  const lines = [
+    `Réceptionniste : ${name}`,
+    `Journée : ${today}`,
+    '',
+    'Mes ventes',
+    ...(sales.length
+      ? sales.map(
+          (row) =>
+            `FAC-${String(row.id).padStart(5, '0')} · ${row.guest_name || 'Comptant'} · ch. ${row.room_number || '—'} · ${money(row.total)}`,
+        )
+      : ['Aucune vente enregistrée à votre nom aujourd’hui.']),
+    '',
+    'Séjours du jour',
+    ...(stays.length
+      ? stays.map(
+          (row) =>
+            `${row.guest_name} · ch. ${row.room_number}${row.room_type ? ` (${row.room_type})` : ''} · ${String(row.check_in).slice(0, 10)} → ${String(row.check_out).slice(0, 10)} · ${row.status} · ${money(row.total)}`,
+        )
+      : ['Aucun séjour à signaler.']),
+  ];
+  await deliverPdf(`rapport-${today}.pdf`, `Rapport journalier — ${name}`, lines, 'download');
 }
 
 function ClientHome() {

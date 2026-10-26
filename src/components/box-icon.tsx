@@ -13,6 +13,7 @@ export const boxiconsGlyphMap = {
   building: 0xea0a,
   bulb: 0xea0d,
   cabinet: 0xea12,
+  cart: 0xea36,
   calendar: 0xea15,
   'check-circle': 0xea46,
   'chevron-left': 0xea4d,

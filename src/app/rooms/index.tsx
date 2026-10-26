@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Redirect, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { HotelShell, StatusBadge } from '@/components/hotel/hotel-shell';
 import { FilterBar } from '@/components/hotel/filter-bar';
@@ -30,7 +30,13 @@ export default function RoomsScreen() {
   const [pendingDelete, setPendingDelete] = useState<Room | null>(null);
   const [pendingStatus, setPendingStatus] = useState<{ room: Room; next: 'maintenance' | 'disponible' } | null>(null);
   const [openIssues, setOpenIssues] = useState(0);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [categorySaving, setCategorySaving] = useState(false);
   const canManage = user?.role === 'manager' || user?.role === 'owner';
+  const canCategories = canManage || user?.role === 'receptionist';
 
   async function load() {
     if (!token) return;
@@ -69,13 +75,59 @@ export default function RoomsScreen() {
   const cardWidth = Math.max(150, Math.floor((available - (columns - 1) * 16) / columns));
 
   if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && user?.role === 'receptionist') return <Redirect href="/home" />;
 
   async function remove() {
     if (!token || !pendingDelete) return;
     await pmsPost(token, 'rooms/delete', { id: pendingDelete.id });
     setPendingDelete(null);
     await load();
+  }
+
+  async function loadCategories() {
+    if (!token) return;
+    const payload = await pmsGet<{ categories: { id: number; name: string }[] }>(token, 'room-categories');
+    setCategories(payload.categories || []);
+  }
+
+  async function openCategories() {
+    setCategoryError(null);
+    setCategoriesOpen(true);
+    try {
+      await loadCategories();
+    } catch (err) {
+      setCategoryError(err instanceof Error ? err.message : 'Chargement impossible.');
+    }
+  }
+
+  async function addCategory() {
+    if (!token || categorySaving) return;
+    const name = categoryName.trim();
+    if (!name) {
+      setCategoryError('Indiquez le nom de la catégorie.');
+      return;
+    }
+    setCategorySaving(true);
+    setCategoryError(null);
+    try {
+      await pmsPost(token, 'room-categories', { name });
+      setCategoryName('');
+      await loadCategories();
+    } catch (err) {
+      setCategoryError(err instanceof Error ? err.message : 'Création impossible.');
+    } finally {
+      setCategorySaving(false);
+    }
+  }
+
+  async function removeCategory(id: number) {
+    if (!token) return;
+    setCategoryError(null);
+    try {
+      await pmsPost(token, 'room-categories/delete', { id });
+      await loadCategories();
+    } catch (err) {
+      setCategoryError(err instanceof Error ? err.message : 'Suppression impossible.');
+    }
   }
 
   async function applyStatus() {
@@ -91,9 +143,14 @@ export default function RoomsScreen() {
       loading={loading}
       error={error}
       right={
-        canManage ? (
-          <GoldBtn compact icon="plus" label="Ajouter" onPress={() => router.push('/rooms/form' as Href)} />
-        ) : null
+        <View style={styles.titleTools}>
+          {canCategories ? (
+            <GoldBtn compact icon="grid-alt" label="Catégorie" onPress={() => void openCategories()} />
+          ) : null}
+          {canManage ? (
+            <GoldBtn compact icon="plus" label="Ajouter" onPress={() => router.push('/rooms/form' as Href)} />
+          ) : null}
+        </View>
       }>
       {canManage && openIssues > 0 ? (
         <Pressable onPress={() => router.push('/issues' as Href)} style={styles.banner}>
@@ -169,6 +226,40 @@ export default function RoomsScreen() {
         ))}
       </View>
       {!visible.length ? <Text style={styles.empty}>Aucune chambre ne correspond.</Text> : null}
+      <Modal visible={categoriesOpen} transparent animationType="fade" onRequestClose={() => setCategoriesOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setCategoriesOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>Catégories</Text>
+              <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setCategoriesOpen(false)} />
+            </View>
+            <Text style={styles.sheetHint}>Standard, De luxe, Suite, Familiale…</Text>
+            <View style={styles.categoryForm}>
+              <TextInput
+                value={categoryName}
+                onChangeText={setCategoryName}
+                placeholder="Nouvelle catégorie"
+                style={styles.categoryInput}
+              />
+              <GoldBtn compact icon="plus" label={categorySaving ? 'Ajout…' : 'Créer'} onPress={() => void addCategory()} />
+            </View>
+            {categoryError ? <Text style={styles.formError}>{categoryError}</Text> : null}
+            <ScrollView style={styles.categoryList}>
+              {categories.map((item) => (
+                <View key={item.id} style={styles.categoryRow}>
+                  <Text style={styles.categoryName}>{item.name}</Text>
+                  {canManage ? (
+                    <Pressable onPress={() => void removeCategory(item.id)} hitSlop={8}>
+                      <AppIcon name="trash" size={16} color={Palette.ink} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       <ConfirmDialog
         visible={!!pendingDelete}
         title="Confirmer la suppression"
@@ -206,6 +297,46 @@ const styles = StyleSheet.create({
     borderBottomColor: Palette.ink,
   },
   bannerText: { color: Palette.ink, fontWeight: '800', fontSize: 14 },
+  titleTools: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 },
+  overlayFill: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(20,22,34,0.55)' },
+  sheet: {
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '80%',
+    backgroundColor: Palette.white,
+    borderRadius: Radius.card,
+    padding: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    zIndex: 2,
+  },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  sheetTitle: { color: Palette.ink, fontWeight: '800', fontSize: 18 },
+  sheetHint: { color: Palette.ink, opacity: 0.6, fontSize: 13 },
+  categoryForm: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  categoryInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(20,22,34,0.14)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: Palette.ink,
+  },
+  categoryList: { flexGrow: 0 },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(20,22,34,0.06)',
+  },
+  categoryName: { color: Palette.ink, fontWeight: '700', flex: 1 },
+  formError: { color: Palette.ink, fontWeight: '700', backgroundColor: 'rgba(212,175,55,0.18)', padding: 10, borderRadius: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, width: '100%' },
   empty: { color: Palette.ink, opacity: 0.6 },
   card: {

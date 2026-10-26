@@ -54,7 +54,7 @@ function toBars(counts: number[], labels: string[]): PeriodBar[] {
 export function computeRoomStats(history: RoomStay[] = []): RoomStats {
   const cancelled = history.filter((row) => row.status === 'annulee').length;
   const stays = history.filter((row) => row.status !== 'annulee');
-  const guests = new Set(stays.map((row) => row.guest_name.trim().toLowerCase()).filter(Boolean)).size;
+  const guests = new Set(stays.map((row) => String(row.guest_name || '').trim().toLowerCase()).filter(Boolean)).size;
   const revenue = stays.reduce((sum, row) => sum + Number(row.total || 0), 0);
   const nights = stays.reduce((sum, row) => sum + nightsBetween(row.check_in, row.check_out), 0);
   const monthCounts = Array.from({ length: 12 }, () => 0);

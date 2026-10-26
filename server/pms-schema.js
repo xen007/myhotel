@@ -568,6 +568,8 @@ async function ensurePmsSchema(db) {
   await widenColumn(db, 'company_profile', 'stamp', 'MEDIUMTEXT');
   await db.run("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('schema_version', ?)", [SCHEMA_VERSION]);
   }
+  await addColumn(db, 'reservations', 'check_in_time', "TEXT NOT NULL DEFAULT '14:00'");
+  await addColumn(db, 'reservations', 'check_out_time', "TEXT NOT NULL DEFAULT '12:00'");
   if (!await db.get('SELECT id FROM company_profile WHERE id = 1')) {
     await db.run(
       `INSERT INTO company_profile (id, name, legal_name, address, city, country, phone, email, website, nif, rccm, slogan)

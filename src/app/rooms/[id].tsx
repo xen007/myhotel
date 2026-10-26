@@ -1,13 +1,13 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon, type BoxIconName } from '@/components/box-icon';
 import { FilterBar } from '@/components/hotel/filter-bar';
 import { HotelShell, StatusBadge } from '@/components/hotel/hotel-shell';
 import { RoomMedia } from '@/components/hotel/room-media';
 import { RoomStatsPanel } from '@/components/hotel/room-stats-panel';
-import { Palette, Radius } from '@/constants/theme';
+import { Breakpoints, Palette, Radius } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { roomRequest, type Room } from '@/lib/api';
 import { money, prettyWhen, reservationStatusLabel, reservationTone, roomStatusLabel } from '@/lib/format';
@@ -22,6 +22,8 @@ function statusTone(status: string): 'gold' | 'ink' | 'muted' {
 
 export default function RoomDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { width } = useWindowDimensions();
+  const narrow = width < Breakpoints.tablet;
   const { user, ready, token } = useAuth();
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,6 @@ export default function RoomDetailScreen() {
   const poster = room?.photos?.[0] ?? room?.photo ?? null;
 
   if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && user?.role === 'receptionist') return <Redirect href="/home" />;
 
   return (
     <HotelShell
@@ -142,7 +143,7 @@ export default function RoomDetailScreen() {
             </View>
             <Text style={styles.section}>Équipements</Text>
             <View style={styles.equipGrid}>
-              {room.equipment.map((item) => (
+              {(room.equipment ?? []).map((item) => (
                 <View key={item.id} style={styles.equip}>
                   <View style={styles.equipIcon}>
                     <AppIcon name={item.icon as BoxIconName} size={20} color={Palette.ink} />
@@ -153,7 +154,7 @@ export default function RoomDetailScreen() {
                   </View>
                 </View>
               ))}
-              {!room.equipment.length ? <Text style={styles.desc}>Aucun équipement enregistré.</Text> : null}
+              {!(room.equipment ?? []).length ? <Text style={styles.desc}>Aucun équipement enregistré.</Text> : null}
             </View>
           </View>
 
@@ -174,6 +175,28 @@ export default function RoomDetailScreen() {
               { id: 'annulee', label: 'Annulée' },
             ]}
           />
+          {narrow ? (
+            <View style={styles.historyList}>
+              {visibleHistory.map((row) => (
+                <View key={row.id} style={styles.historyCard}>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.clientName}>{row.guest_name}</Text>
+                      <Text style={styles.lot}>{row.guest_phone || '—'}</Text>
+                    </View>
+                    <StatusBadge
+                      label={reservationStatusLabel[row.status] ?? row.status}
+                      tone={reservationTone[row.status] ?? 'gold'}
+                    />
+                  </View>
+                  <Text style={styles.desc}>
+                    {prettyWhen(row.check_in, row.check_in_time)} → {prettyWhen(row.check_out, row.check_out_time)}
+                  </Text>
+                  <Text style={styles.factValue}>{money(row.total)}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator>
           <View style={styles.table}>
             <View style={[styles.tr, styles.th]}>
@@ -202,6 +225,7 @@ export default function RoomDetailScreen() {
             ))}
           </View>
           </ScrollView>
+          )}
           {!visibleHistory.length ? <Text style={styles.desc}>Aucun séjour ne correspond.</Text> : null}
         </View>
       ) : null}
@@ -306,6 +330,15 @@ const styles = StyleSheet.create({
   colTotal: { flex: 0.8, minWidth: 80 },
   clientName: { color: Palette.ink, fontWeight: '700' },
   lot: { color: Palette.ink, opacity: 0.55, fontSize: 12 },
+  historyList: { gap: 10 },
+  historyCard: {
+    backgroundColor: Palette.white,
+    borderRadius: Radius.card,
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(20,22,34,0.06)',
+  },
   statIcon: {
     width: 40,
     height: 40,

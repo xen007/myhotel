@@ -28,18 +28,13 @@ L’API écoute sur `http://localhost:3847`.
 
 Dépôt : [https://github.com/MAKUI237/myhotel](https://github.com/MAKUI237/myhotel)
 
-## Hébergement Vercel
+## Hébergement Railway
 
-1. Importer [MAKUI237/myhotel](https://github.com/MAKUI237/myhotel) sur [vercel.com/new](https://vercel.com/new).
-2. Framework Preset : **Other**.
-3. Build Command : `npx expo export -p web`
-4. Output Directory : `dist`
-5. Root Directory : `.` (la racine du dépôt, pas un sous-dossier).
-6. Dans **Settings → Environment Variables**, ajoutez la connexion MySQL distante :
-   - `MYSQL_URL` = `mysql://USER:PASSWORD@HOST:3306/NOM_BASE`
-   - `MYHOTEL_MYSQL_SSL` = `1` si l’hébergeur MySQL exige SSL
-7. Attendez le statut **Ready**, puis ouvrez l’URL **Production** (pas un lien Preview expiré).
+Le service Railway doit suivre la branche `main` de [MAKUI237/myhotel](https://github.com/MAKUI237/myhotel). `railway.toml` construit le site (`npm run build`) puis démarre la même API qu’en local (`node server/index.js`). Cette API sert aussi le site exporté.
 
-L’API Vercel (`/api`) a besoin d’un MySQL accessible depuis Internet (pas `127.0.0.1`). Créez la base à l’avance si l’utilisateur n’a pas le droit `CREATE DATABASE`.
+Dans les variables du service :
 
-`DEPLOYMENT_NOT_FOUND` apparaît si le build a échoué ou si l’URL n’est pas celle du dernier déploiement Ready. Dans Vercel : Project → Deployments → ouvrir le déploiement vert.
+- `MYSQL_URL` = `mysql://USER:PASSWORD@HOST:3306/myhotel`
+- `MYHOTEL_MYSQL_SSL` = `1` si MySQL exige SSL
+
+MySQL doit être joignable depuis Internet. La base `myhotel` doit déjà exister si le compte n’a pas le droit de la créer. Chaque push sur `main` redéploie une fois.

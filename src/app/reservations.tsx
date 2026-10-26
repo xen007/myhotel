@@ -735,7 +735,7 @@ export default function ReservationsScreen() {
                           <GuestBadgeCard key={badge.code} badge={badge} />
                         ))}
                       </View>
-                      <GoldBtn icon="receipt" label="Imprimer les badges" onPress={() => printGuestBadges(badges)} />
+                      <GoldBtn icon="receipt" label="Imprimer les badges" onPress={() => printGuestBadges(badges, company ?? {})} />
                     </>
                   )}
                   <GoldBtn icon="x-circle" label="Fermer" variant="ghost" onPress={closeModal} />
@@ -876,7 +876,7 @@ export default function ReservationsScreen() {
                   <GuestBadgeCard key={badge.code} badge={badge} width={280} />
                 ))}
               </View>
-              <GoldBtn icon="receipt" label="Imprimer les badges" onPress={() => printGuestBadges(previewBadges)} />
+              <GoldBtn icon="receipt" label="Imprimer les badges" onPress={() => printGuestBadges(previewBadges, company ?? {})} />
               <GoldBtn
                 icon="id-card"
                 label="Voir l’historique"

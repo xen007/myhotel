@@ -116,6 +116,8 @@ async function toStoredUri(asset: ImagePicker.ImagePickerAsset) {
 export default function StockScreen() {
   const { data, error, loading, reload, token, user, ready } = usePms<Payload>('stock');
   const { width } = useWindowDimensions();
+  const [pendingWarehouse, setPendingWarehouse] = useState<Warehouse | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [warehouse, setWarehouse] = useState('all');
   const [status, setStatus] = useState('all');
@@ -257,6 +259,19 @@ export default function StockScreen() {
     }
   }
 
+  async function removeWarehouse() {
+    if (!token || !pendingWarehouse) return;
+    try {
+      await pmsPost(token, 'warehouses/delete', { id: pendingWarehouse.id });
+      setPendingWarehouse(null);
+      setListError(null);
+      await reload();
+    } catch (err) {
+      setPendingWarehouse(null);
+      setListError(err instanceof Error ? err.message : 'Suppression impossible.');
+    }
+  }
+
   async function saveIssue() {
     if (!token || !issue || saving) return;
     setSaving(true);
@@ -291,6 +306,18 @@ export default function StockScreen() {
           <GoldBtn compact icon="plus" label="Ajouter" onPress={openCreate} />
         </>
       }>
+      <View style={styles.storeList}>
+        {warehouses.map((item) => (
+          <View key={item.id} style={styles.storeChip}>
+            <Text style={styles.storeName} numberOfLines={1}>{item.name}</Text>
+            <Pressable style={[styles.iconBtn, styles.iconDanger]} onPress={() => setPendingWarehouse(item)} hitSlop={6}>
+              <AppIcon name="trash" size={14} color={Palette.white} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+      {listError ? <Text style={styles.inlineError}>{listError}</Text> : null}
+
       {ruptureCount > 0 ? (
         <Pressable onPress={() => setStatus('rupture')} style={styles.banner}>
           <AppIcon name="error-circle" size={18} color={Palette.ink} />
@@ -451,7 +478,7 @@ export default function StockScreen() {
                         />
                       )
                     ) : (
-                      <Text style={styles.photoHint}>Créez d’abord un magasin.</Text>
+                      <Text style={styles.photoHint}>—</Text>
                     )}
                   </View>
                   <Field label="Nom" value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -493,7 +520,6 @@ export default function StockScreen() {
                   ) : (
                     <View style={styles.photoEmpty}>
                       <AppIcon name="cabinet" size={22} color={Palette.ink} />
-                      <Text style={styles.photoHint}>Photo facultative</Text>
                     </View>
                   )}
                   <GoldBtn compact icon="plus" label={form.photo ? 'Changer la photo' : 'Ajouter une photo'} onPress={() => void pickPhoto()} />
@@ -511,7 +537,7 @@ export default function StockScreen() {
       <ConfirmDialog
         visible={!!issue}
         title={`Sortie magasin · ${issue?.product.name ?? ''}`}
-        message="Indiquez qui récupère le produit et la quantité."
+        message=""
         confirmLabel={saving ? 'Enregistrement…' : 'Valider la sortie'}
         confirmIcon="log-out"
         confirmVariant="gold"
@@ -545,7 +571,7 @@ export default function StockScreen() {
       <ConfirmDialog
         visible={warehouseName !== null}
         title="Nouveau magasin"
-        message="Le magasin sert à localiser le stock (accueil, étages, cuisine…)."
+        message=""
         confirmLabel={saving ? 'Enregistrement…' : 'Créer'}
         confirmIcon="plus"
         onCancel={() => {
@@ -561,6 +587,17 @@ export default function StockScreen() {
           style={styles.input}
         />
       </ConfirmDialog>
+
+      <ConfirmDialog
+        visible={!!pendingWarehouse}
+        title="Supprimer le magasin"
+        message={pendingWarehouse ? `${pendingWarehouse.name} ?` : ''}
+        confirmLabel="Supprimer"
+        confirmIcon="trash"
+        confirmVariant="ink"
+        onCancel={() => setPendingWarehouse(null)}
+        onConfirm={() => void removeWarehouse()}
+      />
 
       <ConfirmDialog
         visible={!!pendingDelete}
@@ -670,6 +707,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconDanger: { backgroundColor: Palette.ink },
+  storeList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  storeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Palette.white,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    borderRadius: 14,
+    paddingLeft: 12,
+    paddingRight: 6,
+    paddingVertical: 6,
+  },
+  storeName: { color: Palette.ink, fontWeight: '800', maxWidth: 160 },
   empty: { color: Palette.ink, opacity: 0.6, marginTop: 8 },
   moves: { gap: 4, marginTop: 8 },
   movesTitle: { color: Palette.ink, fontWeight: '800', fontSize: 16, marginBottom: 4 },

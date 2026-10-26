@@ -18,9 +18,15 @@ function htmlToLines(html: string) {
     .filter(Boolean);
 }
 
-function emitDocument(filename: string, title: string, html: string, mode: 'download' | 'print') {
+function emitDocument(
+  filename: string,
+  title: string,
+  html: string,
+  mode: 'download' | 'print',
+  company?: CompanyVoucher,
+) {
   const lines = htmlToLines(html);
-  void deliverPdf(filename, title, lines.length ? lines : [title], mode);
+  void deliverPdf(filename, title, lines.length ? lines : [title], mode, company);
 }
 
 function escapeHtml(value: string) {
@@ -78,6 +84,7 @@ export function printGuestBadges(
     check_out_time?: string;
     code: string;
   }[],
+  company?: CompanyVoucher,
 ) {
   const cards = badges
     .map((badge) => {
@@ -108,7 +115,7 @@ export function printGuestBadges(
     })
     .join('');
 
-  emitDocument('badges-acces.pdf', 'Badges d’accès chambre', cards, 'print');
+  emitDocument('badges-acces.pdf', 'Badges d’accès chambre', cards, 'print', company);
 }
 
 export function printReceipt(opts: {
@@ -286,6 +293,7 @@ function openVoucher(stay: ReservationVoucher, company: CompanyVoucher, statusLa
     `Réservation MH-${String(stay.id).padStart(5, '0')}`,
     voucherHtml(stay, company, statusLabel),
     mode,
+    company,
   );
 }
 
@@ -407,6 +415,7 @@ function openSaleInvoice(sale: SaleInvoice, company: CompanyVoucher, mode: 'prin
     `Facture FAC-${String(sale.id).padStart(5, '0')}`,
     saleInvoiceHtml(sale, company),
     mode,
+    company,
   );
 }
 
@@ -493,7 +502,7 @@ function pmsReportHtml(doc: PmsReportDoc, company: CompanyVoucher = {}) {
 }
 
 function openPmsReport(doc: PmsReportDoc, company: CompanyVoucher, mode: 'print' | 'download') {
-  emitDocument(`${doc.title.replace(/\s+/g, '-').toLowerCase()}.pdf`, doc.title, pmsReportHtml(doc, company), mode);
+  emitDocument(`${doc.title.replace(/\s+/g, '-').toLowerCase()}.pdf`, doc.title, pmsReportHtml(doc, company), mode, company);
 }
 
 export function printPmsReport(doc: PmsReportDoc, company: CompanyVoucher = {}) {

@@ -148,7 +148,7 @@ export function ConfirmDialog({
             <AppIcon name="error-circle" size={32} color={Palette.ink} />
           </View>
           <Text style={styles.dialogTitle}>{title}</Text>
-          <Text style={styles.dialogMsg}>{message}</Text>
+          {message ? <Text style={styles.dialogMsg}>{message}</Text> : null}
           {children ? <View style={styles.dialogBody}>{children}</View> : null}
           <View style={styles.dialogActions}>
             <GoldBtn compact icon="x-circle" label={cancelLabel} variant="ghost" onPress={onCancel} />

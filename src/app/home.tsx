@@ -6,7 +6,7 @@ import { GoldBtn } from '@/components/hotel/kit';
 import { RoleDashboard, type DashPayload } from '@/components/hotel/role-dashboard';
 import { pmsGet } from '@/lib/api';
 import { money } from '@/lib/format';
-import { deliverPdf } from '@/lib/pdf';
+import { deliverPdf, type PdfBrand } from '@/lib/pdf';
 import { Palette } from '@/constants/theme';
 import { AppBar } from '@/components/nav/app-bar';
 import { RightDrawer } from '@/components/nav/right-drawer';
@@ -57,7 +57,7 @@ function StaffHome() {
 
 async function downloadReceptionDay(token: string, name: string) {
   const today = new Date().toISOString().slice(0, 10);
-  const [pos, office] = await Promise.all([
+  const [pos, office, company] = await Promise.all([
     pmsGet<{
       sales: {
         id: number;
@@ -79,6 +79,7 @@ async function downloadReceptionDay(token: string, name: string) {
         total: number;
       }[];
     }>(token, 'front-office'),
+    pmsGet<PdfBrand>(token, 'company').catch(() => undefined),
   ]);
   const sales = (pos.sales || []).filter(
     (row) => (row.seller || '') === name && String(row.at || '').slice(0, 10) === today,
@@ -108,7 +109,7 @@ async function downloadReceptionDay(token: string, name: string) {
         )
       : ['Aucun séjour à signaler.']),
   ];
-  await deliverPdf(`rapport-${today}.pdf`, `Rapport journalier — ${name}`, lines, 'download');
+  await deliverPdf(`rapport-${today}.pdf`, `Rapport journalier — ${name}`, lines, 'download', company);
 }
 
 function ClientHome() {

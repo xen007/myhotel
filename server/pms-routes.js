@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { day } = require('./pms-seed');
 const { DATA_DIR } = require('./db');
 const { writeAudit, actorIdentity } = require('./audit');
+const { buildBrandedPdf } = require('./pdf-brand');
 
 const CHAT_DIR = path.join(DATA_DIR, 'chat');
 const MAX_CHAT_FILE = 12 * 1024 * 1024;
@@ -693,6 +694,29 @@ async function handlePms(req, res, ctx) {
     await releaseExpiredStays(db);
   } catch {
     /* ignore */
+  }
+
+  if (method === 'POST' && pathName === '/pms/document') {
+    try {
+      const body = await readBody(req);
+      const company = await db.get('SELECT * FROM company_profile WHERE id = 1');
+      const title = String(body.title || 'MyHotel').slice(0, 140);
+      const lines = Array.isArray(body.lines) ? body.lines.slice(0, 400).map((line) => String(line).slice(0, 500)) : [];
+      const filename = String(body.filename || 'document.pdf').replace(/[^a-z0-9._-]+/gi, '-') || 'document.pdf';
+      const bytes = await buildBrandedPdf(title, lines, company || {});
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+        'Cache-Control': 'no-store',
+      });
+      res.end(Buffer.from(bytes));
+    } catch (error) {
+      console.error('[pdf]', error);
+      fail(res, error instanceof Error ? error.message : 'PDF impossible.', 500);
+    }
+    return true;
   }
 
   if (method === 'GET' && pathName === '/pms/company') {
@@ -2565,6 +2589,28 @@ async function handlePms(req, res, ctx) {
     }
     await db.run('INSERT INTO warehouses (name, kind) VALUES (?, ?)', [name, String(body.kind || 'magasin').trim() || 'magasin']);
     ok(res, { id: await db.lastId() }, 'Magasin créé.', 201);
+    return true;
+  }
+
+  if (method === 'POST' && pathName === '/pms/warehouses/delete') {
+    if (actor.role !== 'manager' && actor.role !== 'owner') {
+      fail(res, 'Seul le gérant peut supprimer un magasin.', 403);
+      return true;
+    }
+    const body = await readBody(req);
+    const id = Number(body.id || 0);
+    const warehouse = await db.get('SELECT id, name FROM warehouses WHERE id = ?', [id]);
+    if (!warehouse) {
+      fail(res, 'Magasin introuvable.', 404);
+      return true;
+    }
+    const used = await db.get('SELECT COUNT(*) AS n FROM products WHERE warehouse_id = ?', [id]);
+    if (Number(used?.n || 0) > 0) {
+      fail(res, 'Ce magasin contient encore des produits.');
+      return true;
+    }
+    await db.run('DELETE FROM warehouses WHERE id = ?', [id]);
+    ok(res, { id });
     return true;
   }
 

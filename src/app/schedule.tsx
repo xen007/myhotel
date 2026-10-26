@@ -473,7 +473,7 @@ export default function ScheduleScreen() {
       <ConfirmDialog
         visible={!!job}
         title="Nouvelle tâche"
-        message="Assignez une tâche d’équipe à un employé."
+        message=""
         confirmLabel={saving ? 'Enregistrement…' : 'Créer'}
         confirmIcon="check-circle"
         confirmVariant="gold"

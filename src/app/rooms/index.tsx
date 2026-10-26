@@ -51,6 +51,12 @@ export default function RoomsScreen() {
         }
       }
       setError(null);
+      try {
+        const payload = await pmsGet<{ categories: { id: number; name: string }[] }>(token, 'room-categories');
+        setCategories(payload.categories || []);
+      } catch {
+        /* la liste se recharge à l’ouverture du panneau */
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chargement impossible.');
     } finally {
@@ -152,6 +158,21 @@ export default function RoomsScreen() {
           ) : null}
         </View>
       }>
+      {canCategories ? (
+        <View style={styles.categoryBoard}>
+          {categories.map((item) => (
+            <View key={item.id} style={styles.categoryChip}>
+              <Text style={styles.categoryChipName} numberOfLines={1}>{item.name}</Text>
+              {canManage ? (
+                <Pressable style={styles.categoryTrash} onPress={() => void removeCategory(item.id)} hitSlop={6}>
+                  <AppIcon name="trash" size={14} color={Palette.white} />
+                </Pressable>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {categoryError && !categoriesOpen ? <Text style={styles.formError}>{categoryError}</Text> : null}
       {canManage && openIssues > 0 ? (
         <Pressable onPress={() => router.push('/issues' as Href)} style={styles.banner}>
           <AppIcon name="error-circle" size={18} color={Palette.ink} />
@@ -234,7 +255,6 @@ export default function RoomsScreen() {
               <Text style={styles.sheetTitle}>Catégories</Text>
               <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setCategoriesOpen(false)} />
             </View>
-            <Text style={styles.sheetHint}>Standard, De luxe, Suite, Familiale…</Text>
             <View style={styles.categoryForm}>
               <TextInput
                 value={categoryName}
@@ -250,8 +270,8 @@ export default function RoomsScreen() {
                 <View key={item.id} style={styles.categoryRow}>
                   <Text style={styles.categoryName}>{item.name}</Text>
                   {canManage ? (
-                    <Pressable onPress={() => void removeCategory(item.id)} hitSlop={8}>
-                      <AppIcon name="trash" size={16} color={Palette.ink} />
+                    <Pressable style={styles.categoryTrash} onPress={() => void removeCategory(item.id)} hitSlop={8}>
+                      <AppIcon name="trash" size={14} color={Palette.white} />
                     </Pressable>
                   ) : null}
                 </View>
@@ -314,7 +334,28 @@ const styles = StyleSheet.create({
   },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   sheetTitle: { color: Palette.ink, fontWeight: '800', fontSize: 18 },
-  sheetHint: { color: Palette.ink, opacity: 0.6, fontSize: 13 },
+  categoryBoard: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Palette.white,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    borderRadius: 14,
+    paddingLeft: 12,
+    paddingRight: 6,
+    paddingVertical: 6,
+  },
+  categoryChipName: { color: Palette.ink, fontWeight: '800', maxWidth: 160 },
+  categoryTrash: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: Palette.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   categoryForm: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   categoryInput: {
     flex: 1,

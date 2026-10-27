@@ -175,7 +175,7 @@ export function ProfilePanel({ onClose, embed }: { onClose: () => void; embed?: 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <View style={styles.avatarWrap}>
-            <UserAvatar name={user?.full_name} photo={user?.photo} size={88} />
+            <UserAvatar name={user?.full_name} photo={user?.photo} size={64} />
             <Pressable onPress={() => void pickPhoto()} style={styles.cam}>
               <AppIcon name="plus" size={14} color={Palette.white} />
             </Pressable>
@@ -226,9 +226,9 @@ export function ProfilePanel({ onClose, embed }: { onClose: () => void; embed?: 
             </Pressable>
           </View>
           <View style={styles.legend}>
-            <View style={[styles.dot, { backgroundColor: Palette.gold }]} />
+            <View style={[styles.dot, { backgroundColor: 'rgba(212,175,55,0.45)' }]} />
             <Text style={styles.legendText}>Présent</Text>
-            <View style={[styles.dot, { backgroundColor: Palette.ink }]} />
+            <View style={[styles.dot, { backgroundColor: 'rgba(20,22,34,0.28)' }]} />
             <Text style={styles.legendText}>Absent</Text>
           </View>
           <View style={styles.week}>
@@ -402,14 +402,16 @@ const styles = StyleSheet.create({
   kicker: {
     color: Palette.ink,
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.4,
+    fontWeight: '700',
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
+    lineHeight: 14,
   },
   headerTitle: {
     color: Palette.ink,
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: '800',
+    lineHeight: 20,
   },
   body: {
     padding: 16,
@@ -451,14 +453,16 @@ const styles = StyleSheet.create({
   },
   name: {
     color: Palette.ink,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
+    lineHeight: 20,
   },
   mail: {
     color: Palette.ink,
     opacity: 0.6,
     marginTop: 2,
     fontSize: 13,
+    lineHeight: 18,
   },
   badges: {
     flexDirection: 'row',
@@ -491,9 +495,10 @@ const styles = StyleSheet.create({
   section: {
     color: Palette.ink,
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: 12,
+    lineHeight: 16,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.3,
   },
   stats: {
     flexDirection: 'row',
@@ -517,6 +522,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 4,
     fontSize: 13,
+    lineHeight: 16,
   },
   calHead: {
     width: '100%',
@@ -528,7 +534,8 @@ const styles = StyleSheet.create({
   calTitle: {
     color: Palette.ink,
     fontWeight: '800',
-    fontSize: 16,
+    fontSize: 14,
+    lineHeight: 18,
   },
   legend: {
     flexDirection: 'row',
@@ -577,11 +584,12 @@ const styles = StyleSheet.create({
   },
   today: {
     borderWidth: 2,
-    borderColor: Palette.white,
+    borderColor: Palette.gold,
   },
   dayText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: '700',
   },
   row: {
     width: '100%',
@@ -609,6 +617,8 @@ const styles = StyleSheet.create({
     color: Palette.ink,
     fontWeight: '700',
     marginTop: 2,
+    fontSize: 14,
+    lineHeight: 18,
   },
   logout: {
     flex: 1,
@@ -623,6 +633,8 @@ const styles = StyleSheet.create({
   logoutText: {
     color: Palette.ink,
     fontWeight: '800',
+    fontSize: 14,
+    lineHeight: 18,
   },
   footer: {
     flexDirection: 'row',
@@ -646,6 +658,8 @@ const styles = StyleSheet.create({
   ghostText: {
     color: Palette.ink,
     fontWeight: '800',
+    fontSize: 14,
+    lineHeight: 18,
   },
   overlay: {
     flex: 1,
@@ -664,7 +678,8 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     color: Palette.ink,
-    fontSize: 18,
+    fontSize: 16,
+    lineHeight: 20,
     fontWeight: '800',
     textAlign: 'center',
   },
@@ -680,6 +695,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     color: Palette.ink,
+    fontSize: 14,
   },
   modalActions: {
     flexDirection: 'row',
@@ -698,6 +714,8 @@ const styles = StyleSheet.create({
   cancelText: {
     color: Palette.ink,
     fontWeight: '700',
+    fontSize: 14,
+    lineHeight: 18,
   },
   save: {
     flex: 1,
@@ -710,5 +728,7 @@ const styles = StyleSheet.create({
   saveText: {
     color: Palette.ink,
     fontWeight: '800',
+    fontSize: 14,
+    lineHeight: 18,
   },
 });

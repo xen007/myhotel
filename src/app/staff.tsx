@@ -38,7 +38,8 @@ type FormState = {
 const ROLE_OPTIONS = [
   { id: 'receptionist', label: 'Réception' },
   { id: 'manager', label: 'Gérance' },
-  { id: 'housekeeping', label: 'Entretien' },
+  { id: 'housekeeping', label: 'Sales' },
+  { id: 'restaurant', label: 'Restaurant' },
 ];
 
 const emptyForm: FormState = {
@@ -65,7 +66,6 @@ export default function StaffScreen() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [form, setForm] = useState<FormState | null>(null);
   const [pendingBan, setPendingBan] = useState<Employee | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<Employee | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -144,13 +144,6 @@ export default function StaffScreen() {
     await reload();
   }
 
-  async function remove() {
-    if (!token || !pendingDelete) return;
-    await pmsPost(token, 'employees/delete', { id: pendingDelete.id });
-    setPendingDelete(null);
-    await reload();
-  }
-
   if (ready && !user) return <Redirect href="/welcome" />;
   if (ready && !isOwner) return <Redirect href="/home" />;
 
@@ -218,11 +211,6 @@ export default function StaffScreen() {
                       <Pressable style={styles.iconBtn} onPress={() => setPendingBan(item)}>
                         <AppIcon name={banned ? 'show' : 'hide'} size={15} color={Palette.ink} />
                       </Pressable>
-                      <Pressable
-                        style={[styles.iconBtn, styles.iconDanger]}
-                        onPress={() => setPendingDelete(item)}>
-                        <AppIcon name="trash" size={15} color={Palette.white} />
-                      </Pressable>
                     </>
                   )}
                 </View>
@@ -288,7 +276,7 @@ export default function StaffScreen() {
         message={
           pendingBan?.status === 'banni'
             ? `Réactiver ${pendingBan?.full_name ?? ''} ? Il pourra à nouveau se connecter.`
-            : `Bannir ${pendingBan?.full_name ?? ''} ? Il ne pourra plus se connecter.`
+            : `Bannir ${pendingBan?.full_name ?? ''} ? Il ne pourra plus se connecter. Ses données restent conservées.`
         }
         confirmLabel={pendingBan?.status === 'banni' ? 'Réactiver' : 'Bannir'}
         confirmIcon={pendingBan?.status === 'banni' ? 'check-circle' : 'hide'}
@@ -297,14 +285,6 @@ export default function StaffScreen() {
         onConfirm={() => void applyBan()}
       />
 
-      <ConfirmDialog
-        visible={!!pendingDelete}
-        title="Supprimer l’employé"
-        message={`Supprimer le compte de ${pendingDelete?.full_name ?? ''} ?`}
-        confirmLabel="Supprimer"
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={() => void remove()}
-      />
     </HotelShell>
   );
 }

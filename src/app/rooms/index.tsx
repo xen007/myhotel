@@ -27,16 +27,20 @@ export default function RoomsScreen() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
-  const [pendingDelete, setPendingDelete] = useState<Room | null>(null);
+  const [pendingOut, setPendingOut] = useState<Room | null>(null);
   const [pendingStatus, setPendingStatus] = useState<{ room: Room; next: 'maintenance' | 'disponible' } | null>(null);
+  const [maintLevel, setMaintLevel] = useState<'legere' | 'grave'>('legere');
+  const [maintNote, setMaintNote] = useState('');
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [openIssues, setOpenIssues] = useState(0);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [categoryName, setCategoryName] = useState('');
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [categorySaving, setCategorySaving] = useState(false);
+  const [pendingCategory, setPendingCategory] = useState<{ id: number; name: string } | null>(null);
   const canManage = user?.role === 'manager' || user?.role === 'owner';
-  const canCategories = canManage || user?.role === 'receptionist';
+  const canCategories = canManage;
 
   async function load() {
     if (!token) return;
@@ -82,10 +86,10 @@ export default function RoomsScreen() {
 
   if (ready && !user) return <Redirect href="/welcome" />;
 
-  async function remove() {
-    if (!token || !pendingDelete) return;
-    await pmsPost(token, 'rooms/delete', { id: pendingDelete.id });
-    setPendingDelete(null);
+  async function putOut() {
+    if (!token || !pendingOut) return;
+    await pmsPost(token, 'rooms/status', { id: pendingOut.id, status: 'hors_service' });
+    setPendingOut(null);
     await load();
   }
 
@@ -138,8 +142,18 @@ export default function RoomsScreen() {
 
   async function applyStatus() {
     if (!token || !pendingStatus) return;
-    await pmsPost(token, 'rooms/status', { id: pendingStatus.room.id, status: pendingStatus.next });
+    if (pendingStatus.next === 'maintenance' && !maintNote.trim()) {
+      setStatusError('Décrivez le problème.');
+      return;
+    }
+    setStatusError(null);
+    await pmsPost(token, 'rooms/status', {
+      id: pendingStatus.room.id,
+      status: pendingStatus.next,
+      ...(pendingStatus.next === 'maintenance' ? { level: maintLevel, description: maintNote.trim() } : {}),
+    });
     setPendingStatus(null);
+    setMaintNote('');
     await load();
   }
 
@@ -158,21 +172,6 @@ export default function RoomsScreen() {
           ) : null}
         </View>
       }>
-      {canCategories ? (
-        <View style={styles.categoryBoard}>
-          {categories.map((item) => (
-            <View key={item.id} style={styles.categoryChip}>
-              <Text style={styles.categoryChipName} numberOfLines={1}>{item.name}</Text>
-              {canManage ? (
-                <Pressable style={styles.categoryTrash} onPress={() => void removeCategory(item.id)} hitSlop={6}>
-                  <AppIcon name="trash" size={14} color={Palette.white} />
-                </Pressable>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      ) : null}
-      {categoryError && !categoriesOpen ? <Text style={styles.formError}>{categoryError}</Text> : null}
       {canManage && openIssues > 0 ? (
         <Pressable onPress={() => router.push('/issues' as Href)} style={styles.banner}>
           <AppIcon name="error-circle" size={18} color={Palette.ink} />
@@ -194,6 +193,7 @@ export default function RoomsScreen() {
           { id: 'reservee', label: 'Réservée' },
           { id: 'nettoyage', label: 'Nettoyage' },
           { id: 'maintenance', label: 'Maintenance' },
+          { id: 'hors_service', label: 'Hors service' },
         ]}
       />
       <View style={styles.grid}>
@@ -208,14 +208,19 @@ export default function RoomsScreen() {
                   <Text style={styles.playText}>Vidéo</Text>
                 </View>
               ) : null}
-              {canManage && room.status !== 'maintenance' && room.status !== 'nettoyage' ? (
+              {canManage && room.status !== 'maintenance' && room.status !== 'nettoyage' && room.status !== 'hors_service' ? (
                 <Pressable
                   style={styles.photoBtn}
-                  onPress={() => setPendingStatus({ room, next: 'maintenance' })}>
+                  onPress={() => {
+                    setMaintLevel('legere');
+                    setMaintNote('');
+                    setStatusError(null);
+                    setPendingStatus({ room, next: 'maintenance' });
+                  }}>
                   <AppIcon name="cog" size={16} color={Palette.ink} />
                 </Pressable>
               ) : null}
-              {canManage && (room.status === 'maintenance' || room.status === 'nettoyage') ? (
+              {canManage && (room.status === 'maintenance' || room.status === 'nettoyage' || room.status === 'hors_service') ? (
                 <Pressable
                   style={[styles.photoBtn, styles.photoBtnReady]}
                   onPress={() => setPendingStatus({ room, next: 'disponible' })}>
@@ -238,7 +243,11 @@ export default function RoomsScreen() {
                 {canManage ? (
                   <>
                     <GoldBtn block tiny icon="edit" label="Modifier" onPress={() => router.push(`/rooms/form?id=${room.id}` as Href)} />
-                    <GoldBtn block tiny icon="trash" label="Supprimer" variant="ink" onPress={() => setPendingDelete(room)} />
+                    {room.status === 'hors_service' ? (
+                      <GoldBtn block tiny icon="check-circle" label="En service" onPress={() => setPendingStatus({ room, next: 'disponible' })} />
+                    ) : (
+                      <GoldBtn block tiny icon="hide" label="Hors service" variant="ink" onPress={() => setPendingOut(room)} />
+                    )}
                   </>
                 ) : null}
               </View>
@@ -270,7 +279,7 @@ export default function RoomsScreen() {
                 <View key={item.id} style={styles.categoryRow}>
                   <Text style={styles.categoryName}>{item.name}</Text>
                   {canManage ? (
-                    <Pressable style={styles.categoryTrash} onPress={() => void removeCategory(item.id)} hitSlop={8}>
+                    <Pressable style={styles.categoryTrash} onPress={() => setPendingCategory(item)} hitSlop={8}>
                       <AppIcon name="trash" size={14} color={Palette.white} />
                     </Pressable>
                   ) : null}
@@ -281,25 +290,52 @@ export default function RoomsScreen() {
         </View>
       </Modal>
       <ConfirmDialog
-        visible={!!pendingDelete}
+        visible={!!pendingCategory}
         title="Confirmer la suppression"
-        message={`Supprimer la chambre ${pendingDelete?.number} ?`}
+        message={pendingCategory ? `Supprimer la catégorie ${pendingCategory.name} ?` : ''}
         confirmLabel="Supprimer"
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={() => void remove()}
+        onCancel={() => setPendingCategory(null)}
+        onConfirm={() => {
+          const id = pendingCategory?.id;
+          setPendingCategory(null);
+          if (id) void removeCategory(id);
+        }}
+      />
+      <ConfirmDialog
+        visible={!!pendingOut}
+        title="Mettre hors service"
+        message={pendingOut ? `La chambre ${pendingOut.number} ne pourra plus être louée. Ses données restent conservées.` : ''}
+        confirmLabel="Hors service"
+        onCancel={() => setPendingOut(null)}
+        onConfirm={() => void putOut()}
       />
       <ConfirmDialog
         visible={!!pendingStatus}
         title={pendingStatus?.next === 'maintenance' ? 'Mettre en maintenance' : 'Marquer prête'}
         message={
           pendingStatus?.next === 'maintenance'
-            ? `La chambre ${pendingStatus?.room.number} sera hors service jusqu’à ce que le gérant la marque prête.`
+            ? `Chambre ${pendingStatus?.room.number}`
             : `La chambre ${pendingStatus?.room.number} redevient disponible.`
         }
-        confirmLabel={pendingStatus?.next === 'maintenance' ? 'Maintenance' : 'Prête'}
+        confirmLabel={pendingStatus?.next === 'maintenance' ? 'Enregistrer' : 'Prête'}
         onCancel={() => setPendingStatus(null)}
-        onConfirm={() => void applyStatus()}
-      />
+        onConfirm={() => void applyStatus()}>
+        {pendingStatus?.next === 'maintenance' ? (
+          <View style={{ gap: 8 }}>
+            {statusError ? <Text style={styles.formError}>{statusError}</Text> : null}
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              <GoldBtn compact label="Faible" variant={maintLevel === 'legere' ? 'gold' : 'ghost'} onPress={() => setMaintLevel('legere')} />
+              <GoldBtn compact label="Grave" variant={maintLevel === 'grave' ? 'gold' : 'ghost'} onPress={() => setMaintLevel('grave')} />
+            </View>
+            <TextInput
+              value={maintNote}
+              onChangeText={setMaintNote}
+              placeholder="Description"
+              style={styles.categoryInput}
+            />
+          </View>
+        ) : null}
+      </ConfirmDialog>
     </HotelShell>
   );
 }

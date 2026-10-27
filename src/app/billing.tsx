@@ -42,7 +42,7 @@ export default function BillingScreen() {
   if (ready && !user) return <Redirect href="/welcome" />;
 
   return (
-    <HotelShell back title="Facturation" subtitle="Notes et encaissements" loading={loading} error={error}>
+    <HotelShell back title="Facturation" loading={loading} error={error}>
       {invoices.map((invoice) => (
         <View key={invoice.id} style={styles.card}>
           <View style={styles.row}>

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Redirect } from 'expo-router';
-import { createElement, useMemo, useState } from 'react';
+import { createElement, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -20,8 +20,8 @@ import { HotelShell } from '@/components/hotel/hotel-shell';
 import { ConfirmDialog, GoldBtn } from '@/components/hotel/kit';
 import { Breakpoints, Palette, Radius } from '@/constants/theme';
 import { usePms } from '@/hooks/use-pms';
-import { pmsPost } from '@/lib/api';
-import { prettyDate, prettyStamp } from '@/lib/format';
+import { pmsPost, roomsRequest } from '@/lib/api';
+import { money, prettyDate, prettyStamp } from '@/lib/format';
 
 type Product = {
   id: number;
@@ -32,6 +32,7 @@ type Product = {
   min_stock: number;
   cost: number;
   price: number;
+  category?: string | null;
   warehouse_id?: number | null;
   warehouse?: string | null;
   lot?: string | null;
@@ -39,25 +40,45 @@ type Product = {
   photo?: string | null;
 };
 
-type Warehouse = { id: number; name: string; kind?: string };
+type Warehouse = { id: number; name: string; kind?: string; active?: number };
+type Category = { id: number; name: string; active?: number };
 
 type Move = {
   id: number;
   product_name: string;
+  warehouse?: string | null;
   type: string;
   qty: number;
   at: string;
   dest?: string | null;
   actor?: string | null;
   note?: string | null;
+  taken_by?: string | null;
+  cancelled_at?: string | null;
 };
 
-type Payload = { products: Product[]; warehouses?: Warehouse[]; moves?: Move[] };
+type StaffPick = { name: string; email?: string | null; role?: string };
+
+type Payload = { products: Product[]; warehouses?: Warehouse[]; categories?: Category[]; moves?: Move[]; staff?: StaffPick[] };
+
+function pickStaff(people: StaffPick[], name: string, email: string, query: string) {
+  if (name) {
+    const exact = people.find((person) => person.name === name && (!email || (person.email || '') === email));
+    if (exact) return exact;
+  }
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+  const hits = people.filter(
+    (person) => person.name.toLowerCase().startsWith(q) || (person.email || '').toLowerCase().startsWith(q),
+  );
+  return hits.length === 1 ? hits[0] : null;
+}
 
 type FormState = {
   id?: number;
   name: string;
   kind: 'vente' | 'interne';
+  category: string;
   warehouse_id: string;
   lot: string;
   stock: string;
@@ -68,9 +89,10 @@ type FormState = {
   photo: string;
 };
 
-const emptyForm = (warehouseId = ''): FormState => ({
+const emptyForm = (warehouseId = '', category = ''): FormState => ({
   name: '',
   kind: 'vente',
+  category,
   warehouse_id: warehouseId,
   lot: '',
   stock: '0',
@@ -125,13 +147,61 @@ export default function StockScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Product | null>(null);
-  const [warehouseName, setWarehouseName] = useState<string | null>(null);
-  const [issue, setIssue] = useState<{ product: Product; qty: string; taken_by: string; note: string } | null>(null);
+  const [warehouseName, setWarehouseName] = useState('');
+  const [storesOpen, setStoresOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [categoryName, setCategoryName] = useState('');
+  const [editingStore, setEditingStore] = useState<{ id: number; name: string } | null>(null);
+  const [editingCategory, setEditingCategory] = useState<{ id: number; name: string } | null>(null);
+  const [pendingCategory, setPendingCategory] = useState<Category | null>(null);
+  const [issue, setIssue] = useState<{ product: Product; qty: string; taken_by: string; taken_email: string; note: string; room_number: string } | null>(null);
+  const [staffQuery, setStaffQuery] = useState('');
+  const [rooms, setRooms] = useState<{ number: string }[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [pendingMove, setPendingMove] = useState<Move | null>(null);
 
   const canManage = user?.role === 'manager' || user?.role === 'owner';
+
+  useEffect(() => {
+    if (!token) return;
+    void roomsRequest(token)
+      .then((list) => setRooms(list.map((room) => ({ number: room.number }))))
+      .catch(() => setRooms([]));
+  }, [token]);
   const products = useMemo(() => data?.products ?? [], [data?.products]);
   const warehouses = useMemo(() => data?.warehouses ?? [], [data?.warehouses]);
-  const moves = useMemo(() => (data?.moves ?? []).filter((row) => row.type === 'sortie'), [data?.moves]);
+  const categories = useMemo(() => data?.categories ?? [], [data?.categories]);
+  const activeWarehouses = useMemo(() => warehouses.filter((item) => Number(item.active ?? 1) === 1), [warehouses]);
+  const activeCategories = useMemo(() => categories.filter((item) => Number(item.active ?? 1) === 1), [categories]);
+  const moves = useMemo(
+    () => (data?.moves ?? []).filter((row) => ['sortie', 'service', 'perte', 'casse', 'perime'].includes(row.type)),
+    [data?.moves],
+  );
+  const people = useMemo(() => {
+    const seen = new Set<string>();
+    return (data?.staff ?? []).filter((person) => {
+      const key = `${person.name}|${person.email ?? ''}`;
+      if (!person.name || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [data?.staff]);
+  const staffMatches = useMemo(() => {
+    const q = staffQuery.trim().toLowerCase();
+    if (!q) return people;
+    return people.filter(
+      (person) => person.name.toLowerCase().startsWith(q) || (person.email || '').toLowerCase().startsWith(q),
+    );
+  }, [people, staffQuery]);
+  const historyRows = useMemo(() => {
+    const q = historyQuery.trim().toLowerCase();
+    return moves.filter((row) => {
+      if (!q) return true;
+      const who = row.taken_by || row.note || '';
+      return `${row.product_name} ${row.warehouse ?? ''} ${row.dest ?? ''} ${who}`.toLowerCase().includes(q);
+    });
+  }, [moves, historyQuery]);
   const ruptureCount = products.filter((item) => Number(item.stock) <= 0).length;
 
   const visible = useMemo(() => {
@@ -152,8 +222,9 @@ export default function StockScreen() {
 
   function openCreate() {
     setFormError(null);
-    const first = warehouses[0];
-    setForm(emptyForm(first ? String(first.id) : ''));
+    const first = activeWarehouses[0];
+    const category = activeCategories[0];
+    setForm(emptyForm(first ? String(first.id) : '', category ? category.name : ''));
   }
 
   function openEdit(item: Product) {
@@ -162,7 +233,8 @@ export default function StockScreen() {
       id: item.id,
       name: item.name,
       kind: isInterne(item) ? 'interne' : 'vente',
-      warehouse_id: item.warehouse_id ? String(item.warehouse_id) : warehouses[0] ? String(warehouses[0].id) : '',
+      category: item.category || '',
+      warehouse_id: item.warehouse_id ? String(item.warehouse_id) : activeWarehouses[0] ? String(activeWarehouses[0].id) : '',
       lot: item.lot || '',
       stock: String(item.stock ?? 0),
       min_stock: String(item.min_stock ?? 0),
@@ -204,6 +276,10 @@ export default function StockScreen() {
       setFormError('Choisissez le magasin où se trouve le produit.');
       return;
     }
+    if (!form.category.trim()) {
+      setFormError('Choisissez une catégorie.');
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -211,6 +287,7 @@ export default function StockScreen() {
         id: form.id,
         name: form.name.trim(),
         kind: form.kind,
+        category: form.category.trim(),
         warehouse_id: Number(form.warehouse_id),
         lot: form.lot.trim(),
         stock: Number(form.stock || 0),
@@ -238,7 +315,7 @@ export default function StockScreen() {
 
   async function saveWarehouse() {
     if (!token || saving) return;
-    const name = warehouseName?.trim() ?? '';
+    const name = warehouseName.trim();
     if (!name) {
       setFormError('Indiquez le nom du magasin.');
       return;
@@ -247,7 +324,7 @@ export default function StockScreen() {
     setFormError(null);
     try {
       const created = await pmsPost<{ id: number }>(token, 'warehouses', { name });
-      setWarehouseName(null);
+      setWarehouseName('');
       if (form && created?.id) {
         setForm({ ...form, warehouse_id: String(created.id) });
       }
@@ -272,15 +349,134 @@ export default function StockScreen() {
     }
   }
 
+  function storeUsed(item: Warehouse) {
+    return products.some((product) => Number(product.warehouse_id) === item.id)
+      || moves.some((move) => String(move.warehouse || '').trim().toLowerCase() === item.name.trim().toLowerCase());
+  }
+
+  function categoryUsed(item: Category) {
+    return products.some((product) => String(product.category || '').trim().toLowerCase() === item.name.trim().toLowerCase());
+  }
+
+  async function renameStore() {
+    if (!token || !editingStore || saving) return;
+    const name = editingStore.name.trim();
+    if (!name) {
+      setFormError('Indiquez le nom du magasin.');
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      await pmsPost(token, 'warehouses/update', { id: editingStore.id, name });
+      setEditingStore(null);
+      await reload();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Modification impossible.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleStore(item: Warehouse, active: boolean) {
+    if (!token) return;
+    try {
+      await pmsPost(token, 'warehouses/active', { id: item.id, active: active ? 1 : 0 });
+      setListError(null);
+      await reload();
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Modification impossible.');
+    }
+  }
+
+  async function saveCategory() {
+    if (!token || saving) return;
+    const name = categoryName.trim();
+    if (!name) {
+      setFormError('Indiquez le nom de la catégorie.');
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const created = await pmsPost<{ id: number }>(token, 'categories', { name });
+      setCategoryName('');
+      if (form && created?.id) {
+        const next = categories.find((item) => item.id === created.id)?.name || name;
+        setForm({ ...form, category: next });
+      }
+      await reload();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Création impossible.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function renameCategory() {
+    if (!token || !editingCategory || saving) return;
+    const name = editingCategory.name.trim();
+    if (!name) {
+      setFormError('Indiquez le nom de la catégorie.');
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      await pmsPost(token, 'categories/update', { id: editingCategory.id, name });
+      setEditingCategory(null);
+      await reload();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Modification impossible.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeCategory() {
+    if (!token || !pendingCategory) return;
+    try {
+      await pmsPost(token, 'categories/delete', { id: pendingCategory.id });
+      setPendingCategory(null);
+      setListError(null);
+      await reload();
+    } catch (err) {
+      setPendingCategory(null);
+      setListError(err instanceof Error ? err.message : 'Suppression impossible.');
+    }
+  }
+
+  async function toggleCategory(item: Category, active: boolean) {
+    if (!token) return;
+    try {
+      await pmsPost(token, 'categories/active', { id: item.id, active: active ? 1 : 0 });
+      setListError(null);
+      await reload();
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Modification impossible.');
+    }
+  }
+
   async function saveIssue() {
     if (!token || !issue || saving) return;
+    if (!issue.room_number.trim()) {
+      setFormError('Indiquez la chambre de destination.');
+      return;
+    }
+    const person = pickStaff(people, issue.taken_by, issue.taken_email, staffQuery);
+    if (!person) {
+      setFormError('Choisissez un personnel enregistré.');
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
       await pmsPost(token, 'stock/issue', {
         product_id: issue.product.id,
         qty: Number(issue.qty || 0),
-        taken_by: issue.taken_by.trim(),
+        taken_by: person.name,
+        taken_email: person.email || '',
+        room_number: issue.room_number.trim(),
         note: issue.note.trim(),
       });
       setIssue(null);
@@ -292,30 +488,42 @@ export default function StockScreen() {
     }
   }
 
+  async function cancelMove() {
+    if (!token || !pendingMove) return;
+    try {
+      await pmsPost(token, 'stock/issue/cancel', { id: pendingMove.id });
+      setPendingMove(null);
+      setListError(null);
+      await reload();
+    } catch (err) {
+      setPendingMove(null);
+      setListError(err instanceof Error ? err.message : 'Annulation impossible.');
+    }
+  }
+
+  const storeOptions = form
+    ? warehouses.filter((item) => Number(item.active ?? 1) === 1 || String(item.id) === form.warehouse_id)
+    : activeWarehouses;
+  const categoryOptions = form
+    ? categories.filter((item) => Number(item.active ?? 1) === 1 || item.name === form.category)
+    : activeCategories;
+
   if (ready && !user) return <Redirect href="/welcome" />;
   if (ready && !canManage) return <Redirect href="/home" />;
 
   return (
     <HotelShell
-      title="Gestion des stocks"
+      title="Économat"
       loading={loading && !data}
       error={error}
       right={
         <>
-          <GoldBtn compact icon="plus" label="Créer magasin" variant="ghost" onPress={() => { setFormError(null); setWarehouseName(''); }} />
+          <GoldBtn compact icon="cabinet" label="Magasin" variant="ghost" onPress={() => { setFormError(null); setWarehouseName(''); setEditingStore(null); setStoresOpen(true); }} />
+          <GoldBtn compact icon="food-menu" label="Catégorie" variant="ghost" onPress={() => { setFormError(null); setCategoryName(''); setEditingCategory(null); setCategoriesOpen(true); }} />
+          <GoldBtn compact icon="time" label="Historique" variant="ghost" onPress={() => { setHistoryQuery(''); setHistoryOpen(true); }} />
           <GoldBtn compact icon="plus" label="Ajouter" onPress={openCreate} />
         </>
       }>
-      <View style={styles.storeList}>
-        {warehouses.map((item) => (
-          <View key={item.id} style={styles.storeChip}>
-            <Text style={styles.storeName} numberOfLines={1}>{item.name}</Text>
-            <Pressable style={[styles.iconBtn, styles.iconDanger]} onPress={() => setPendingWarehouse(item)} hitSlop={6}>
-              <AppIcon name="trash" size={14} color={Palette.white} />
-            </Pressable>
-          </View>
-        ))}
-      </View>
       {listError ? <Text style={styles.inlineError}>{listError}</Text> : null}
 
       {ruptureCount > 0 ? (
@@ -378,23 +586,20 @@ export default function StockScreen() {
                       {item.name}
                     </Text>
                     <Text style={styles.lot} numberOfLines={1}>
-                      {out ? 'URGENCE · rupture' : low ? 'Stock bas' : `Lot : ${lotLabel(item)}`}
+                      {item.category ? `${item.category} · ` : ''}
+                      {out ? 'Rupture' : low ? 'Stock bas' : `Lot ${lotLabel(item)}`}
                       {item.expires_at ? ` · exp. ${prettyDate(String(item.expires_at))}` : ''}
                     </Text>
                   </View>
                 </View>
-                <Text style={[styles.td, styles.colUse, styles.cellText]} numberOfLines={1}>
-                  {item.warehouse || (isInterne(item) ? 'Magasin' : 'Accueil')}
-                </Text>
-                <View style={[styles.td, styles.colNum, styles.numCell]}>
-                  <Text style={[styles.num, (out || low) && styles.numLow]}>{qty(Number(item.stock))}</Text>
-                </View>
+                <Text style={[styles.td, styles.colUse]} numberOfLines={1}>{item.warehouse || '—'}</Text>
+                <Text style={[styles.td, styles.colNum, styles.num, out && styles.numLow]}>{qty(Number(item.stock))}</Text>
                 <Text style={[styles.td, styles.colNum, styles.num]}>{qty(Number(item.min_stock))}</Text>
-                <Text style={[styles.td, styles.colPrice, styles.num]}>{qty(Number(item.cost))}</Text>
-                <Text style={[styles.td, styles.colPrice, styles.num]}>{isInterne(item) ? '—' : qty(Number(item.price))}</Text>
+                <Text style={[styles.td, styles.colPrice, styles.num]}>{money(Number(item.cost))}</Text>
+                <Text style={[styles.td, styles.colPrice, styles.num]}>{money(Number(item.price))}</Text>
                 <View style={[styles.td, styles.colActions, styles.actionRow]}>
-                  {isInterne(item) ? (
-                    <Pressable style={styles.iconBtn} onPress={() => { setFormError(null); setIssue({ product: item, qty: '1', taken_by: '', note: '' }); }}>
+                  {item.kind === 'interne' ? (
+                    <Pressable style={styles.iconBtn} onPress={() => { setFormError(null); setStaffQuery(''); setIssue({ product: item, qty: '1', taken_by: '', taken_email: '', note: '', room_number: '' }); }}>
                       <AppIcon name="log-out" size={15} color={Palette.ink} />
                     </Pressable>
                   ) : null}
@@ -411,7 +616,6 @@ export default function StockScreen() {
         </View>
       </ScrollView>
       {!visible.length ? <Text style={styles.empty}>Aucun produit ne correspond.</Text> : null}
-
       {moves.length ? (
         <View style={styles.moves}>
           <Text style={styles.movesTitle}>Dernières sorties magasin</Text>
@@ -428,10 +632,7 @@ export default function StockScreen() {
           <Pressable style={styles.overlayFill} onPress={() => setForm(null)} />
           <View style={styles.sheet}>
             <View style={styles.sheetHead}>
-              <View>
-                <Text style={styles.kicker}>Gestion des stocks</Text>
-                <Text style={styles.sheetTitle}>{form?.id ? 'Modifier le produit' : 'Nouveau produit'}</Text>
-              </View>
+              <Text style={styles.sheetTitle}>{form?.id ? 'Modifier le produit' : 'Nouveau produit'}</Text>
               <Pressable onPress={() => setForm(null)} hitSlop={12}>
                 <AppIcon name="x-circle" size={22} color={Palette.ink} />
               </Pressable>
@@ -456,7 +657,7 @@ export default function StockScreen() {
                 <View style={styles.fields}>
                   <View style={styles.field}>
                     <Text style={styles.label}>Magasin</Text>
-                    {warehouses.length ? (
+                    {storeOptions.length ? (
                       Platform.OS === 'web' ? (
                         createElement(
                           'select',
@@ -466,7 +667,7 @@ export default function StockScreen() {
                               setForm({ ...form, warehouse_id: event.target.value }),
                             style: webDate,
                           },
-                          warehouses.map((item) =>
+                          storeOptions.map((item) =>
                             createElement('option', { key: item.id, value: String(item.id) }, item.name),
                           ),
                         )
@@ -474,11 +675,24 @@ export default function StockScreen() {
                         <FilterSelect
                           value={form.warehouse_id}
                           onChange={(warehouse_id) => setForm({ ...form, warehouse_id })}
-                          options={warehouses.map((item) => ({ id: String(item.id), label: item.name }))}
+                          options={storeOptions.map((item) => ({ id: String(item.id), label: item.name }))}
                         />
                       )
                     ) : (
-                      <Text style={styles.photoHint}>—</Text>
+                      <Text style={styles.photoHint}>Créez un magasin</Text>
+                    )}
+                  </View>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Catégorie</Text>
+                    {categoryOptions.length ? (
+                      <FilterSelect
+                        fill
+                        value={form.category}
+                        onChange={(category) => setForm({ ...form, category })}
+                        options={categoryOptions.map((item) => ({ id: item.name, label: item.name }))}
+                      />
+                    ) : (
+                      <Text style={styles.photoHint}>Créez une catégorie</Text>
                     )}
                   </View>
                   <Field label="Nom" value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -534,18 +748,145 @@ export default function StockScreen() {
         </View>
       </Modal>
 
+      <Modal visible={historyOpen} transparent animationType="fade" onRequestClose={() => setHistoryOpen(false)}>
+        <View style={styles.overlay} pointerEvents="box-none">
+          <Pressable style={styles.overlayFill} onPress={() => setHistoryOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>Historique des sorties</Text>
+              <Pressable onPress={() => setHistoryOpen(false)} hitSlop={10}>
+                <AppIcon name="x-circle" size={22} color={Palette.ink} />
+              </Pressable>
+            </View>
+            <TextInput
+              value={historyQuery}
+              onChangeText={setHistoryQuery}
+              placeholder="Produit, chambre, personnel..."
+              style={styles.input}
+            />
+            <ScrollView style={{ maxHeight: 460 }} horizontal>
+              <View style={[styles.table, { minWidth: 820 }]}>
+                <View style={[styles.tr, styles.th]}>
+                  <Text style={[styles.td, styles.colName, styles.thText]}>Produit</Text>
+                  <Text style={[styles.td, styles.colUse, styles.thText]}>Chambre</Text>
+                  <Text style={[styles.td, styles.colUse, styles.thText]}>Personnel</Text>
+                  <Text style={[styles.td, styles.colNum, styles.thText, styles.num]}>Qté</Text>
+                  <Text style={[styles.td, styles.colPrice, styles.thText]}>Date</Text>
+                  <View style={[styles.td, styles.colActions]} />
+                </View>
+                {historyRows.map((row, index) => {
+                  const cancelled = Boolean(row.cancelled_at);
+                  return (
+                    <View key={row.id} style={[styles.tr, index % 2 ? styles.trAlt : null, cancelled && styles.trCancelled]}>
+                      <View style={[styles.td, styles.colName]}>
+                        <Text style={styles.name} numberOfLines={1}>{row.product_name}</Text>
+                        <Text style={styles.lot} numberOfLines={1}>{row.warehouse || 'Magasin'}{row.note ? ` · ${row.note}` : ''}</Text>
+                      </View>
+                      <Text style={[styles.td, styles.colUse, styles.cellText]} numberOfLines={1}>{row.dest || '—'}</Text>
+                      <Text style={[styles.td, styles.colUse, styles.cellText]} numberOfLines={1}>{row.taken_by || row.note || '—'}</Text>
+                      <Text style={[styles.td, styles.colNum, styles.num]}>{qty(Number(row.qty))}</Text>
+                      <Text style={[styles.td, styles.colPrice, styles.cellText]}>{prettyStamp(row.at)}</Text>
+                      <View style={[styles.td, styles.colActions, styles.actionRow]}>
+                        {cancelled ? (
+                          <Text style={styles.lot}>Annulée</Text>
+                        ) : (
+                          <Pressable style={[styles.iconBtn, styles.iconDanger]} onPress={() => setPendingMove(row)}>
+                            <AppIcon name="x-circle" size={15} color={Palette.white} />
+                          </Pressable>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+              {!historyRows.length ? <Text style={styles.empty}>Aucune sortie interne.</Text> : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       <ConfirmDialog
         visible={!!issue}
         title={`Sortie magasin · ${issue?.product.name ?? ''}`}
         message=""
-        confirmLabel={saving ? 'Enregistrement…' : 'Valider la sortie'}
+        confirmLabel="Sortir"
         confirmIcon="log-out"
-        confirmVariant="gold"
         onCancel={() => {
           setIssue(null);
           setFormError(null);
         }}
         onConfirm={() => void saveIssue()}>
+        {Platform.OS === 'web' ? (
+          createElement(
+            'select',
+            {
+              value: issue?.room_number ?? '',
+              onChange: (event: { target: { value: string } }) =>
+                setIssue(issue ? { ...issue, room_number: event.target.value } : issue),
+              style: webDate,
+            },
+            createElement('option', { value: '' }, 'Chambre de destination'),
+            rooms.map((room) => createElement('option', { key: room.number, value: room.number }, `Chambre ${room.number}`)),
+          )
+        ) : (
+          <FilterSelect
+            value={issue?.room_number || ''}
+            onChange={(room_number) => setIssue(issue ? { ...issue, room_number } : issue)}
+            options={[{ id: '', label: 'Chambre de destination' }, ...rooms.map((room) => ({ id: room.number, label: `Chambre ${room.number}` }))]}
+          />
+        )}
+        <TextInput
+          value={staffQuery}
+          onChangeText={(value) => {
+            setStaffQuery(value);
+            const hit = pickStaff(people, '', '', value);
+            setIssue(issue ? { ...issue, taken_by: hit?.name || '', taken_email: hit?.email || '' } : issue);
+          }}
+          placeholder="Début du nom ou de l’e-mail"
+          style={styles.input}
+        />
+        {Platform.OS === 'web' ? (
+          createElement(
+            'select',
+            {
+              value: issue?.taken_email || issue?.taken_by || '',
+              onChange: (event: { target: { value: string } }) => {
+                const key = event.target.value;
+                const person = staffMatches.find((item) => (item.email || item.name) === key) ?? people.find((item) => (item.email || item.name) === key);
+                if (!person) {
+                  setIssue(issue ? { ...issue, taken_by: '', taken_email: '' } : issue);
+                  return;
+                }
+                setStaffQuery(person.name);
+                setIssue(issue ? { ...issue, taken_by: person.name, taken_email: person.email || '' } : issue);
+              },
+              style: webDate,
+            },
+            createElement('option', { value: '' }, 'Personnel'),
+            staffMatches.map((person) =>
+              createElement(
+                'option',
+                { key: `${person.name}-${person.email || ''}`, value: person.email || person.name },
+                person.email ? `${person.name} · ${person.email}` : person.name,
+              ),
+            ),
+          )
+        ) : (
+          <View style={styles.suggest}>
+            {staffMatches.slice(0, 8).map((person) => (
+              <Pressable
+                key={`${person.name}-${person.email || ''}`}
+                style={styles.suggestRow}
+                onPress={() => {
+                  setStaffQuery(person.name);
+                  setIssue(issue ? { ...issue, taken_by: person.name, taken_email: person.email || '' } : issue);
+                }}>
+                <Text style={styles.suggestName}>{person.name}</Text>
+                {person.email ? <Text style={styles.suggestMail}>{person.email}</Text> : null}
+              </Pressable>
+            ))}
+          </View>
+        )}
         {formError && issue ? <Text style={styles.inlineError}>{formError}</Text> : null}
         <TextInput
           value={issue?.taken_by ?? ''}
@@ -568,35 +909,130 @@ export default function StockScreen() {
         />
       </ConfirmDialog>
 
-      <ConfirmDialog
-        visible={warehouseName !== null}
-        title="Nouveau magasin"
-        message=""
-        confirmLabel={saving ? 'Enregistrement…' : 'Créer'}
-        confirmIcon="plus"
-        onCancel={() => {
-          setWarehouseName(null);
-          setFormError(null);
-        }}
-        onConfirm={() => void saveWarehouse()}>
-        {formError && warehouseName !== null ? <Text style={styles.inlineError}>{formError}</Text> : null}
-        <TextInput
-          value={warehouseName ?? ''}
-          onChangeText={setWarehouseName}
-          placeholder="Nom du magasin"
-          style={styles.input}
-        />
-      </ConfirmDialog>
+      <Modal visible={storesOpen} transparent animationType="fade" onRequestClose={() => setStoresOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setStoresOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>Magasins</Text>
+              <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setStoresOpen(false)} />
+            </View>
+            <View style={styles.storeForm}>
+              <TextInput value={warehouseName} onChangeText={setWarehouseName} placeholder="Nouveau magasin" style={styles.input} />
+              <GoldBtn compact icon="plus" label={saving ? 'Ajout…' : 'Créer'} onPress={() => void saveWarehouse()} />
+            </View>
+            {formError && storesOpen ? <Text style={styles.inlineError}>{formError}</Text> : null}
+            <ScrollView style={styles.storeScroll}>
+              {warehouses.map((item) => {
+                const inactive = Number(item.active ?? 1) !== 1;
+                const editing = editingStore?.id === item.id;
+                return (
+                  <View key={item.id} style={styles.storeRow}>
+                    {editing ? (
+                      <TextInput
+                        value={editingStore.name}
+                        onChangeText={(name) => setEditingStore({ id: item.id, name })}
+                        style={[styles.input, styles.storeName]}
+                      />
+                    ) : (
+                      <Text style={[styles.storeName, inactive && styles.inactive]} numberOfLines={1}>
+                        {item.name}{inactive ? ' · inactif' : ''}
+                      </Text>
+                    )}
+                    {editing ? (
+                      <GoldBtn compact icon="check-circle" label="OK" onPress={() => void renameStore()} />
+                    ) : (
+                      <Pressable style={styles.iconBtn} onPress={() => { setFormError(null); setEditingStore({ id: item.id, name: item.name }); }} hitSlop={8}>
+                        <AppIcon name="edit" size={14} color={Palette.ink} />
+                      </Pressable>
+                    )}
+                    {inactive ? (
+                      <GoldBtn compact label="Réactiver" variant="ghost" onPress={() => void toggleStore(item, true)} />
+                    ) : (
+                      <Pressable style={[styles.iconBtn, styles.iconDanger]} onPress={() => setPendingWarehouse(item)} hitSlop={8}>
+                        <AppIcon name="trash" size={14} color={Palette.white} />
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })}
+              {!warehouses.length ? <Text style={styles.empty}>Aucun magasin.</Text> : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={categoriesOpen} transparent animationType="fade" onRequestClose={() => setCategoriesOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setCategoriesOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>Catégories</Text>
+              <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setCategoriesOpen(false)} />
+            </View>
+            <View style={styles.storeForm}>
+              <TextInput value={categoryName} onChangeText={setCategoryName} placeholder="Nouvelle catégorie" style={styles.input} />
+              <GoldBtn compact icon="plus" label={saving ? 'Ajout…' : 'Créer'} onPress={() => void saveCategory()} />
+            </View>
+            {formError && categoriesOpen ? <Text style={styles.inlineError}>{formError}</Text> : null}
+            <ScrollView style={styles.storeScroll}>
+              {categories.map((item) => {
+                const inactive = Number(item.active ?? 1) !== 1;
+                const editing = editingCategory?.id === item.id;
+                const count = products.filter((product) => String(product.category || '').trim().toLowerCase() === item.name.trim().toLowerCase()).length;
+                return (
+                  <View key={item.id} style={styles.storeRow}>
+                    {editing ? (
+                      <TextInput
+                        value={editingCategory.name}
+                        onChangeText={(name) => setEditingCategory({ id: item.id, name })}
+                        style={[styles.input, styles.storeName]}
+                      />
+                    ) : (
+                      <Text style={[styles.storeName, inactive && styles.inactive]} numberOfLines={1}>
+                        {item.name}{inactive ? ' · inactive' : ''} · {count}
+                      </Text>
+                    )}
+                    {editing ? (
+                      <GoldBtn compact icon="check-circle" label="OK" onPress={() => void renameCategory()} />
+                    ) : (
+                      <Pressable style={styles.iconBtn} onPress={() => { setFormError(null); setEditingCategory({ id: item.id, name: item.name }); }} hitSlop={8}>
+                        <AppIcon name="edit" size={14} color={Palette.ink} />
+                      </Pressable>
+                    )}
+                    {inactive ? (
+                      <GoldBtn compact label="Réactiver" variant="ghost" onPress={() => void toggleCategory(item, true)} />
+                    ) : (
+                      <Pressable style={[styles.iconBtn, styles.iconDanger]} onPress={() => setPendingCategory(item)} hitSlop={8}>
+                        <AppIcon name="trash" size={14} color={Palette.white} />
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })}
+              {!categories.length ? <Text style={styles.empty}>Aucune catégorie.</Text> : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <ConfirmDialog
         visible={!!pendingWarehouse}
-        title="Supprimer le magasin"
-        message={pendingWarehouse ? `${pendingWarehouse.name} ?` : ''}
-        confirmLabel="Supprimer"
+        title={pendingWarehouse && storeUsed(pendingWarehouse) ? 'Désactiver le magasin' : 'Supprimer le magasin'}
+        message={pendingWarehouse ? (storeUsed(pendingWarehouse) ? `${pendingWarehouse.name} a déjà des produits ou des mouvements. Il sera désactivé, pas effacé.` : `Supprimer le magasin ${pendingWarehouse.name} ?`) : ''}
+        confirmLabel={pendingWarehouse && storeUsed(pendingWarehouse) ? 'Désactiver' : 'Supprimer'}
         confirmIcon="trash"
-        confirmVariant="ink"
         onCancel={() => setPendingWarehouse(null)}
         onConfirm={() => void removeWarehouse()}
+      />
+      <ConfirmDialog
+        visible={!!pendingCategory}
+        title={pendingCategory && categoryUsed(pendingCategory) ? 'Désactiver la catégorie' : 'Supprimer la catégorie'}
+        message={pendingCategory ? (categoryUsed(pendingCategory) ? `${pendingCategory.name} est utilisée par des produits. Elle sera désactivée.` : `Supprimer la catégorie ${pendingCategory.name} ?`) : ''}
+        confirmLabel={pendingCategory && categoryUsed(pendingCategory) ? 'Désactiver' : 'Supprimer'}
+        confirmIcon="trash"
+        onCancel={() => setPendingCategory(null)}
+        onConfirm={() => void removeCategory()}
       />
 
       <ConfirmDialog
@@ -606,6 +1042,14 @@ export default function StockScreen() {
         confirmLabel="Supprimer"
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => void remove()}
+      />
+      <ConfirmDialog
+        visible={!!pendingMove}
+        title="Annuler la sortie"
+        message={pendingMove ? `Annuler la sortie de ${pendingMove.product_name} et remettre la quantité en stock ?` : ''}
+        confirmLabel="Annuler la sortie"
+        onCancel={() => setPendingMove(null)}
+        onConfirm={() => void cancelMove()}
       />
     </HotelShell>
   );
@@ -675,6 +1119,16 @@ const styles = StyleSheet.create({
   th: { backgroundColor: 'rgba(20,22,34,0.03)', borderBottomColor: 'rgba(20,22,34,0.10)' },
   thText: { color: Palette.ink, opacity: 0.55, fontWeight: '800', fontSize: 11, textTransform: 'uppercase' },
   td: { paddingRight: 8 },
+  trCancelled: { opacity: 0.45 },
+  suggest: { gap: 4, maxHeight: 180 },
+  suggestRow: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(20,22,34,0.04)',
+  },
+  suggestName: { color: Palette.ink, fontWeight: '700' },
+  suggestMail: { color: Palette.ink, opacity: 0.55, fontSize: 12 },
   cellText: { color: Palette.ink, fontSize: 13, fontWeight: '700' },
   colName: { flex: 1.6, minWidth: 200 },
   colUse: { width: 140 },
@@ -720,7 +1174,11 @@ const styles = StyleSheet.create({
     paddingRight: 6,
     paddingVertical: 6,
   },
-  storeName: { color: Palette.ink, fontWeight: '800', maxWidth: 160 },
+  storeName: { color: Palette.ink, fontWeight: '800', flex: 1 },
+  inactive: { opacity: 0.45 },
+  storeForm: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  storeScroll: { maxHeight: 280 },
+  storeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(20,22,34,0.08)' },
   empty: { color: Palette.ink, opacity: 0.6, marginTop: 8 },
   moves: { gap: 4, marginTop: 8 },
   movesTitle: { color: Palette.ink, fontWeight: '800', fontSize: 16, marginBottom: 4 },

@@ -22,7 +22,7 @@ import { ConfirmDialog, GoldBtn } from '@/components/hotel/kit';
 import { Breakpoints, Palette, Radius } from '@/constants/theme';
 import { usePms } from '@/hooks/use-pms';
 import { pmsGet, pmsPost, type CompanyProfile } from '@/lib/api';
-import { hkStatusLabel, money, prettyWhen, reservationStatusLabel, reservationTone } from '@/lib/format';
+import { hkStatusLabel, money, prettyStamp, prettyWhen, reservationStatusLabel, reservationTone } from '@/lib/format';
 import { downloadReservationReport, printGuestBadges, printReservationReport } from '@/lib/print';
 
 type Occupant = {
@@ -52,6 +52,7 @@ type RoomRow = {
   capacity?: number;
   floor?: number;
   description?: string;
+  maintenance_level?: string | null;
   bucket?: 'disponible' | 'occupee' | 'entretien';
   hk_status?: string | null;
   hk_eta?: number;
@@ -77,13 +78,41 @@ type StayRow = {
   check_out_time?: string;
   status: string;
   total: number;
+  list_total?: number | null;
+  discount_amount?: number | null;
+  discount_reason?: string | null;
   occupants?: Occupant[];
+};
+
+type RoomIssue = {
+  id: number;
+  room_number: string;
+  reporter: string;
+  category?: string | null;
+  description: string;
+  status: string;
+  at: string;
 };
 
 type FrontOffice = {
   rooms: RoomRow[];
   reservations: StayRow[];
+  issues?: RoomIssue[];
 };
+
+const LIGHT_CATEGORY = 'Maintenance faible';
+
+function isLightMaintenance(room: RoomRow) {
+  return room.status === 'maintenance' && room.maintenance_level === 'legere';
+}
+
+function isGraveMaintenance(room: RoomRow) {
+  return room.status === 'maintenance' && room.maintenance_level !== 'legere';
+}
+
+function isOutOfService(room: RoomRow) {
+  return room.status === 'hors_service';
+}
 
 function typeMeta(name: string, capacity: number): { icon: BoxIconName } {
   const key = name.toLowerCase();
@@ -92,12 +121,14 @@ function typeMeta(name: string, capacity: number): { icon: BoxIconName } {
   if (key.includes('président') || key.includes('president')) return { icon: 'credit-card' };
   if (key.includes('suite')) return { icon: 'grid-alt' };
   if (key.includes('famil') || capacity >= 4) return { icon: 'group' };
+  if (key.includes('maintenance')) return { icon: 'cog' };
   return { icon: 'bed' };
 }
 
 function TypeCard({
   name,
   icon,
+  total,
   free,
   busy,
   hk,
@@ -107,6 +138,7 @@ function TypeCard({
 }: {
   name: string;
   icon: BoxIconName;
+  total: number;
   free: number;
   busy: number;
   hk: number;
@@ -126,6 +158,9 @@ function TypeCard({
         hover && !pressed && styles.typeCardHover,
         pressed && styles.typeCardPress,
       ]}>
+      <View style={styles.typeCount}>
+        <Text style={styles.typeCountText}>{total}</Text>
+      </View>
       <View style={styles.typeIcon}>
         <AppIcon name={icon} size={16} color={Palette.ink} />
       </View>
@@ -166,19 +201,49 @@ function stamp(date: string, time: string) {
   return `${date} ${time.slice(0, 5)}`;
 }
 
-function Field({
+function addMinutes(value: string, minutes: number) {
+  const [date, time] = value.split(' ');
+  const [y, m, d] = date.split('-').map(Number);
+  const [hh, mm] = (time || '00:00').split(':').map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1, hh || 0, (mm || 0) + minutes);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+function stayClash(start: string, end: string, busyStart: string, busyEnd: string) {
+  return start < addMinutes(busyEnd, 60) && busyStart < addMinutes(end, 60);
+}
+
+function nightsBetween(start: string, end: string) {
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  if (!Number.isFinite(ms)) return 1;
+  return Math.max(1, Math.round(ms / 86400000));
+}
+
+function parseAmount(value: string) {
+  const amount = Number(value.replace(/\s/g, '').replace(',', '.'));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function StayAmount({ row }: { row: StayRow }) {
+  return <Text style={styles.total}>{money(row.total)}</Text>;
+}
+
+  function Field({
   label,
   value,
   onChange,
   type = 'text',
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  type?: 'text' | 'tel' | 'date' | 'time';
+  type?: 'text' | 'tel' | 'date' | 'time' | 'number';
+  compact?: boolean;
 }) {
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, compact && styles.fieldCompact]}>
       <Text style={styles.fieldLabel}>{label}</Text>
       {Platform.OS === 'web' && (type === 'date' || type === 'time')
         ? createElement('input', {
@@ -192,7 +257,7 @@ function Field({
               value={value}
               onChangeText={onChange}
               placeholder={type === 'date' ? 'AAAA-MM-JJ' : type === 'time' ? 'HH:MM' : label}
-              keyboardType={type === 'tel' ? 'phone-pad' : 'default'}
+              keyboardType={type === 'tel' ? 'phone-pad' : type === 'number' ? 'numeric' : 'default'}
               style={styles.input}
             />
           )}
@@ -233,11 +298,20 @@ export default function ReservationsScreen() {
   const [checkOut, setCheckOut] = useState(addDays(ymd(), 1));
   const [checkInTime, setCheckInTime] = useState('14:00');
   const [checkOutTime, setCheckOutTime] = useState('12:00');
+  const [seekIn, setSeekIn] = useState(ymd());
+  const [seekOut, setSeekOut] = useState(addDays(ymd(), 1));
+  const [seekInTime, setSeekInTime] = useState('14:00');
+  const [seekOutTime, setSeekOutTime] = useState('12:00');
+  const [seekOn, setSeekOn] = useState(false);
+  const [seekError, setSeekError] = useState<string | null>(null);
+  const [discount, setDiscount] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
   const [badges, setBadges] = useState<GuestBadge[]>([]);
   const [saving, setSaving] = useState(false);
   const [badgeBusy, setBadgeBusy] = useState<number | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pendingCancel, setPendingCancel] = useState<StayRow | null>(null);
+  const [signalRoom, setSignalRoom] = useState<string | null>(null);
   const [pendingBadge, setPendingBadge] = useState<StayRow | null>(null);
   const [previewBadges, setPreviewBadges] = useState<GuestBadge[]>([]);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
@@ -249,23 +323,39 @@ export default function ReservationsScreen() {
 
   const rooms = data?.rooms ?? [];
   const stays = data?.reservations ?? [];
+  const issues = data?.issues ?? [];
   const types = useMemo(() => {
     const map = new Map<string, RoomRow[]>();
     rooms.forEach((room) => {
+      if (isLightMaintenance(room)) return;
       const list = map.get(room.type) ?? [];
       list.push(room);
       map.set(room.type, list);
     });
-    return Array.from(map.entries()).map(([name, list]) => ({
+    const catalog = Array.from(map.entries()).map(([name, list]) => ({
       name,
       rooms: list,
       photo: list.find((r) => r.photo)?.photo,
       from: Math.min(...list.map((r) => r.price_night)),
-      free: list.filter((r) => r.bucket === 'disponible').length,
+      free: list.filter((r) => r.bucket === 'disponible' && !isGraveMaintenance(r)).length,
       busy: list.filter((r) => r.bucket === 'occupee').length,
       hk: list.filter((r) => r.bucket === 'entretien').length,
       capacity: Math.max(...list.map((r) => r.capacity ?? 1)),
     }));
+    const light = rooms.filter(isLightMaintenance);
+    if (light.length) {
+      catalog.push({
+        name: LIGHT_CATEGORY,
+        rooms: light,
+        photo: light.find((r) => r.photo)?.photo,
+        from: Math.min(...light.map((r) => r.price_night)),
+        free: light.filter((r) => r.bucket !== 'occupee').length,
+        busy: light.filter((r) => r.bucket === 'occupee').length,
+        hk: 0,
+        capacity: Math.max(...light.map((r) => r.capacity ?? 1)),
+      });
+    }
+    return catalog;
   }, [rooms]);
 
   if (ready && !user) return <Redirect href="/welcome" />;
@@ -273,6 +363,7 @@ export default function ReservationsScreen() {
   const isDesktop = width >= Breakpoints.desktop;
   const isMobile = width < Breakpoints.tablet;
   const isGerant = user?.role === 'manager' || user?.role === 'owner';
+  const canDiscount = user?.role === 'receptionist' || isGerant;
   const contentW = Math.max(320, (isDesktop ? width - 248 : width) - 40);
   const tableWidth = isMobile ? contentW : Math.max(contentW, contentW < 1000 ? 1000 : contentW);
   const typeCols = isDesktop ? 4 : width >= Breakpoints.tablet ? 3 : 2;
@@ -281,7 +372,9 @@ export default function ReservationsScreen() {
   const roomCols = isDesktop ? 3 : width >= Breakpoints.tablet ? 2 : 1;
   const roomCardWidth = Math.max(160, Math.floor((typeAvailable - (roomCols - 1) * 16) / roomCols));
 
-  const ofType = rooms.filter((room) => room.type === type);
+  const ofType = rooms.filter((room) =>
+    type === LIGHT_CATEGORY ? isLightMaintenance(room) : room.type === type && !isLightMaintenance(room),
+  );
   const filtered = ofType
     .filter((room) => {
       const hay = `${room.number} ${room.type} ${room.occupant?.name ?? ''}`.toLowerCase();
@@ -297,6 +390,9 @@ export default function ReservationsScreen() {
       const rank = (row: RoomRow) => (row.bucket === 'disponible' ? 0 : row.bucket === 'entretien' ? 1 : 2);
       return rank(a) - rank(b) || a.number.localeCompare(b.number, 'fr');
     });
+  const slotStart = stamp(seekIn, seekInTime);
+  const slotEnd = stamp(seekOut, seekOutTime);
+  const visibleRooms = seekOn ? filtered.filter((room) => roomFits(room, slotStart, slotEnd)) : filtered;
   const visibleStays = stays.filter((row) => {
     const hay = `${row.guest_name} ${row.room_number} ${row.guest_phone ?? ''} ${row.document_id ?? ''}`.toLowerCase();
     if (query.trim() && !hay.includes(query.trim().toLowerCase())) return false;
@@ -305,9 +401,37 @@ export default function ReservationsScreen() {
   });
   const capacity = Math.max(1, booking?.capacity ?? 1);
 
+  function roomFits(room: RoomRow, start: string, end: string) {
+    if (isGraveMaintenance(room) || isOutOfService(room)) return false;
+    const ready = stamp(room.next_free_date || ymd(), room.next_free_time || '00:00');
+    if (start < ready) return false;
+    return !stays.some((row) => {
+      if (String(row.room_number) !== String(room.number)) return false;
+      if (row.status === 'annulee' || row.status === 'terminee') return false;
+      return stayClash(
+        start,
+        end,
+        stamp(String(row.check_in).slice(0, 10), row.check_in_time || '14:00'),
+        stamp(String(row.check_out).slice(0, 10), row.check_out_time || '12:00'),
+      );
+    });
+  }
+
+  function runSeek() {
+    if (stamp(seekOut, seekOutTime) <= stamp(seekIn, seekInTime)) {
+      setSeekError('Le départ doit être après l’arrivée.');
+      setSeekOn(false);
+      return;
+    }
+    setSeekError(null);
+    setSeekOn(true);
+  }
+
   function openBook(room: RoomRow) {
     const freeDate = room.next_free_date || ymd();
     const freeTime = room.next_free_time || '14:00';
+    const wanted = stamp(seekIn, seekInTime);
+    const useSeek = seekOn && wanted >= stamp(freeDate, freeTime);
     const arrivalTime = freeTime > '14:00' ? freeTime : '14:00';
     setEditingId(null);
     setSavedId(null);
@@ -316,10 +440,12 @@ export default function ReservationsScreen() {
     setBooking(room);
     setGuest(emptyPerson());
     setCompanions([]);
-    setCheckIn(freeDate);
-    setCheckInTime(arrivalTime);
-    setCheckOut(addDays(freeDate, 1));
-    setCheckOutTime('12:00');
+    setCheckIn(useSeek ? seekIn : freeDate);
+    setCheckInTime(useSeek ? seekInTime : arrivalTime);
+    setCheckOut(useSeek ? seekOut : addDays(freeDate, 1));
+    setCheckOutTime(useSeek ? seekOutTime : '12:00');
+    setDiscount('');
+    setDiscountReason('');
     setBadges([]);
   }
 
@@ -352,6 +478,8 @@ export default function ReservationsScreen() {
     setCheckOut(row.check_out.slice(0, 10));
     setCheckInTime((row.check_in_time || '14:00').slice(0, 5));
     setCheckOutTime((row.check_out_time || '12:00').slice(0, 5));
+    setDiscount(Number(row.discount_amount || 0) > 0 ? String(row.discount_amount) : '');
+    setDiscountReason(row.discount_reason || '');
     setBadges([]);
     if (!room) setFormError('Chambre introuvable pour cette réservation.');
   }
@@ -363,6 +491,8 @@ export default function ReservationsScreen() {
     setStep('form');
     setFormError(null);
     setBadges([]);
+    setDiscount('');
+    setDiscountReason('');
     setSaving(false);
   }
 
@@ -386,11 +516,24 @@ export default function ReservationsScreen() {
       return;
     }
     if (!editingId) {
+      const start = stamp(checkIn, checkInTime);
+      const end = stamp(checkOut, checkOutTime);
       const free = stamp(booking.next_free_date || ymd(), booking.next_free_time || '14:00');
-      if (stamp(checkIn, checkInTime) < free) {
-        setFormError(`Cette chambre n’est libre qu’à partir du ${prettyWhen(booking.next_free_date || ymd(), booking.next_free_time)}.`);
+      if (start < free) {
+        setFormError(`Cette chambre est libre à partir du ${prettyWhen(booking.next_free_date || ymd(), booking.next_free_time)}. Le séjour commence 1 h après la libération.`);
         return;
       }
+      if (!roomFits(booking, start, end)) {
+        setFormError('Ce créneau chevauche un autre séjour. Laissez 1 h après chaque départ.');
+        return;
+      }
+    }
+    const stayNights = nightsBetween(checkIn, checkOut);
+    const listTotal = stayNights * Number(booking.price_night || 0);
+    const reduction = canDiscount ? parseAmount(discount) : 0;
+    if (reduction < 0 || reduction > listTotal) {
+      setFormError('La réduction doit rester entre 0 et le tarif du séjour.');
+      return;
     }
     const extra = companions.filter((row) => row.first_name.trim() && row.last_name.trim());
     for (const row of extra) {
@@ -414,6 +557,9 @@ export default function ReservationsScreen() {
         check_out_time: checkOutTime,
         companions: extra,
         source: 'reservation',
+        ...(canDiscount
+          ? { discount_amount: reduction, discount_reason: discountReason.trim() }
+          : {}),
       };
       const res = editingId
         ? await pmsPost<{ id: number }>(token, `reservations/${editingId}/update`, payload)
@@ -517,7 +663,11 @@ export default function ReservationsScreen() {
         loading={loading && !data}
         error={error}
         back={Boolean(type && view === 'chambres')}
-        onBack={() => setType(null)}
+        onBack={() => {
+          setType(null);
+          setSeekOn(false);
+          setSeekError(null);
+        }}
         right={
           <View style={styles.tabs}>
             <GoldBtn
@@ -527,6 +677,8 @@ export default function ReservationsScreen() {
               onPress={() => {
                 setView('chambres');
                 setType(null);
+                setSeekOn(false);
+                setSeekError(null);
               }}
             />
             <GoldBtn
@@ -574,7 +726,7 @@ export default function ReservationsScreen() {
                     <Text style={styles.stayLine}>
                       {prettyWhen(row.check_in, row.check_in_time)} → {prettyWhen(row.check_out, row.check_out_time)}
                     </Text>
-                    <Text style={styles.total}>{money(row.total)}</Text>
+                    <StayAmount row={row} />
                     <StayActions row={row} />
                   </View>
                 ))}
@@ -608,7 +760,9 @@ export default function ReservationsScreen() {
                         tone={reservationTone[row.status] ?? 'gold'}
                       />
                     </View>
-                    <Text style={[styles.td, styles.colTotal, styles.total]}>{money(row.total)}</Text>
+                    <View style={[styles.td, styles.colTotal]}>
+                      <StayAmount row={row} />
+                    </View>
                     <View style={[styles.td, styles.colActions]}>
                       <StayActions row={row} />
                     </View>
@@ -619,7 +773,9 @@ export default function ReservationsScreen() {
             )}
             {!visibleStays.length ? <Text style={styles.empty}>Aucune réservation ne correspond.</Text> : null}
           </>
-        ) : !type ? (
+        ) : (
+          <>
+            {!type ? (
           <View style={styles.typeList}>
             {types.map((item) => {
               const meta = typeMeta(item.name, item.capacity);
@@ -628,6 +784,7 @@ export default function ReservationsScreen() {
                   key={item.name}
                   name={item.name}
                   icon={meta.icon}
+                  total={item.rooms.length}
                   free={item.free}
                   busy={item.busy}
                   hk={item.hk}
@@ -644,35 +801,114 @@ export default function ReservationsScreen() {
           </View>
         ) : (
           <>
-            <FilterBar
-              query={roomQuery}
-              onQuery={setRoomQuery}
-              queryPlaceholder="Rechercher une chambre..."
-              status={statusFilter}
-              onStatus={setStatusFilter}
-              statuses={[
-                { id: 'all', label: 'Tous' },
-                { id: 'disponible', label: 'Disponible' },
-                { id: 'occupee', label: 'Occupée' },
-                { id: 'entretien', label: 'Entretien' },
-                { id: 'maintenance', label: 'Maintenance' },
-              ]}
-            />
+            <View style={styles.categoryTools}>
+              <FilterBar
+                query={roomQuery}
+                onQuery={setRoomQuery}
+                queryPlaceholder="Rechercher une chambre..."
+                status={statusFilter}
+                onStatus={setStatusFilter}
+                statuses={[
+                  { id: 'all', label: 'Tous' },
+                  { id: 'disponible', label: 'Disponible' },
+                  { id: 'occupee', label: 'Occupée' },
+                  { id: 'entretien', label: 'Entretien' },
+                  { id: 'maintenance', label: 'Maintenance' },
+                ]}
+              />
+              <View style={styles.seekInline}>
+                <Text style={styles.seekTitle}>Rechercher une disponibilité</Text>
+                <View style={styles.formGrid}>
+                  <Field compact label="Arrivée — date" type="date" value={seekIn} onChange={setSeekIn} />
+                  <Field compact label="Arrivée — heure" type="time" value={seekInTime} onChange={setSeekInTime} />
+                  <Field compact label="Départ — date" type="date" value={seekOut} onChange={setSeekOut} />
+                  <Field compact label="Départ — heure" type="time" value={seekOutTime} onChange={setSeekOutTime} />
+                </View>
+                <View style={styles.seekActions}>
+                  <GoldBtn compact icon="search" label="Chercher" onPress={runSeek} />
+                  {seekOn ? (
+                    <GoldBtn compact icon="x-circle" label="Effacer" variant="ghost" onPress={() => { setSeekOn(false); setSeekError(null); }} />
+                  ) : null}
+                </View>
+                {seekError ? <Text style={styles.formError}>{seekError}</Text> : null}
+                {seekOn ? (
+                  <Text style={styles.seekHint}>
+                    {visibleRooms.length} chambre{visibleRooms.length > 1 ? 's' : ''} libre{visibleRooms.length > 1 ? 's' : ''} · {prettyWhen(seekIn, seekInTime)} → {prettyWhen(seekOut, seekOutTime)}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
             <View style={styles.roomGrid}>
-              {filtered.map((room) => (
+              {visibleRooms.map((room) => (
                 <RoomCard
                   key={room.id}
                   room={room}
                   width={roomCardWidth}
+                  issueCount={issues.filter((item) => item.room_number === room.number && item.status !== 'resolue').length}
                   onBook={() => openBook(room)}
                   onDetails={() => router.push(`/rooms/${room.id}` as Href)}
+                  onIssues={() => setSignalRoom(room.number)}
                 />
               ))}
             </View>
-            {!filtered.length ? <Text style={styles.empty}>Aucune chambre dans ce filtre.</Text> : null}
+            {!visibleRooms.length ? (
+              <Text style={styles.empty}>
+                {seekOn ? 'Aucune chambre libre sur ce créneau. Le séjour commence 1 h après la libération.' : 'Aucune chambre dans ce filtre.'}
+              </Text>
+            ) : null}
+          </>
+        )}
           </>
         )}
       </HotelShell>
+
+      <Modal visible={!!signalRoom} animationType="fade" transparent onRequestClose={() => setSignalRoom(null)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setSignalRoom(null)} />
+          <View style={styles.signalSheet}>
+            <View style={styles.signalHead}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.signalKicker}>Entretien</Text>
+                <Text style={styles.signalTitle}>Chambre {signalRoom}</Text>
+              </View>
+              <Pressable onPress={() => setSignalRoom(null)} hitSlop={10}>
+                <AppIcon name="x-circle" size={22} color={Palette.ink} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.signalList}>
+              {issues
+                .filter((item) => item.room_number === signalRoom)
+                .map((item) => {
+                  const resolved = item.status === 'resolue';
+                  const waiting = item.status === 'en_attente';
+                  return (
+                    <View key={item.id} style={styles.signalRow}>
+                      <View style={[styles.signalRail, resolved ? styles.signalRailDone : waiting ? styles.signalRailWait : styles.signalRailOpen]} />
+                      <View style={styles.signalCopy}>
+                        <Text style={styles.signalName} numberOfLines={1}>{item.category || 'Signalement'}</Text>
+                        <Text style={styles.signalDesc} numberOfLines={2}>{item.description}</Text>
+                        <Text style={styles.signalMeta}>
+                          {item.reporter} · {prettyStamp(item.at)} · {resolved ? 'Résolu' : waiting ? 'En attente' : 'Ouvert'}
+                        </Text>
+                      </View>
+                      <AppIcon
+                        name={resolved ? 'check-circle' : waiting ? 'time' : 'error-circle'}
+                        size={20}
+                        color={resolved ? Palette.ink : Palette.gold}
+                      />
+                    </View>
+                  );
+                })}
+              {!issues.some((item) => item.room_number === signalRoom) ? (
+                <View style={styles.signalRow}>
+                  <View style={[styles.signalRail, styles.signalRailDone]} />
+                  <Text style={styles.signalName}>Aucun signalement</Text>
+                </View>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={!!booking} animationType="fade" transparent onRequestClose={closeModal}>
         <View style={styles.overlay}>
@@ -713,7 +949,7 @@ export default function ReservationsScreen() {
                 </View>
               ) : null}
               <Text style={styles.goldLine}>
-                Prochaine disponibilité : {prettyWhen(booking?.next_free_date || ymd(), booking?.next_free_time)}
+                Prochain séjour possible : {prettyWhen(booking?.next_free_date || ymd(), booking?.next_free_time)} · 1 h après la libération
               </Text>
 
               {formError ? <Text style={styles.formError}>{formError}</Text> : null}
@@ -816,6 +1052,16 @@ export default function ReservationsScreen() {
                     </>
                   ) : null}
 
+                  {canDiscount && booking ? (
+                    <View style={styles.discountBox}>
+                      <Text style={styles.sectionTitle}>Réduction</Text>
+                      <View style={styles.formGrid}>
+                        <Field label="Montant de la réduction" type="number" value={discount} onChange={setDiscount} />
+                        <Field label="Motif" value={discountReason} onChange={setDiscountReason} />
+                      </View>
+                    </View>
+                  ) : null}
+
                   <GoldBtn
                     icon={editingId ? 'edit' : 'check-circle'}
                     label={saving ? 'Enregistrement…' : editingId ? 'Enregistrer les modifications' : 'Confirmer la réservation'}
@@ -913,23 +1159,62 @@ function roomInHk(room: RoomRow) {
 }
 
 function roomBucketLabel(room: RoomRow) {
-  if (room.status === 'maintenance' || room.hk_status === 'maintenance') return 'Maintenance';
+  if (isOutOfService(room)) return 'Hors service';
+  if (isLightMaintenance(room)) return 'Maintenance faible';
+  if (isGraveMaintenance(room) || room.hk_status === 'maintenance') return 'Maintenance grave';
   if (room.bucket === 'occupee' && roomInHk(room)) return 'Occupée · Entretien';
   if (room.bucket === 'disponible') return 'Disponible';
   if (room.bucket === 'occupee') return 'Occupée';
   return 'Entretien';
 }
 
+function LineBtn({
+  icon,
+  label,
+  onPress,
+  disabled,
+  gold,
+  badge,
+}: {
+  icon: BoxIconName;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  gold?: boolean;
+  badge?: number;
+}) {
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.lineBtn, gold ? styles.lineBtnGold : styles.lineBtnGhost, disabled && styles.lineBtnOff]}>
+      <AppIcon name={icon} size={13} color={Palette.ink} />
+      <Text style={styles.lineBtnText} numberOfLines={1}>
+        {label}
+      </Text>
+      {badge ? (
+        <View style={styles.lineBadge}>
+          <Text style={styles.lineBadgeText}>{badge}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function RoomCard({
   room,
   width,
+  issueCount,
   onBook,
   onDetails,
+  onIssues,
 }: {
   room: RoomRow;
   width: number;
+  issueCount: number;
   onBook: () => void;
   onDetails: () => void;
+  onIssues: () => void;
 }) {
   const label = roomBucketLabel(room);
   return (
@@ -945,14 +1230,14 @@ function RoomCard({
           <Text style={styles.roomNumber}>{room.number}</Text>
           <StatusBadge label={label} tone={roomTone(room)} />
         </View>
-        <Text style={styles.roomType}>{room.type}</Text>
+        <Text style={styles.roomType}>{isLightMaintenance(room) ? LIGHT_CATEGORY : room.type}</Text>
         {room.occupant ? (
           <Text style={styles.roomMeta} numberOfLines={1}>
             Occupée · {room.occupant.name} · jusqu’au {prettyWhen(room.occupant.check_out, room.occupant.check_out_time)}
           </Text>
         ) : roomInHk(room) ? (
           <Text style={styles.roomMeta}>
-            {room.status === 'maintenance' ? 'Maintenance' : 'Entretien'} · étage {room.floor ?? '—'}
+            {isGraveMaintenance(room) ? 'Maintenance grave' : isLightMaintenance(room) ? room.type : 'Entretien'} · étage {room.floor ?? '—'}
           </Text>
         ) : (
           <Text style={styles.roomMeta}>
@@ -961,8 +1246,14 @@ function RoomCard({
         )}
         <Text style={styles.roomPrice}>{money(room.price_night)} / nuit</Text>
         <View style={styles.roomActions}>
-          <GoldBtn tiny icon="calendar" label="Réserver" onPress={onBook} />
-          <GoldBtn tiny icon="show" label="Détail" variant="ghost" onPress={onDetails} />
+          <LineBtn
+            icon="calendar"
+            label={isGraveMaintenance(room) || isOutOfService(room) ? 'Fermée' : 'Réserver'}
+            disabled={isGraveMaintenance(room) || isOutOfService(room)}
+            onPress={onBook}
+          />
+          <LineBtn icon="error-circle" label="Signalement" badge={issueCount} gold={issueCount > 0} onPress={onIssues} />
+          <LineBtn icon="show" label="Voir" onPress={onDetails} />
         </View>
       </View>
     </View>
@@ -973,6 +1264,7 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 8 },
   typeList: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   typeCard: {
+    position: 'relative',
     backgroundColor: Palette.white,
     borderRadius: 14,
     paddingVertical: 12,
@@ -1009,7 +1301,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: Palette.ink,
   },
-  typeName: { color: Palette.ink, fontWeight: '800', fontSize: 15 },
+  typeCount: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Palette.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  typeCountText: { color: Palette.gold, fontWeight: '800', fontSize: 12 },
+  typeName: { color: Palette.ink, fontWeight: '800', fontSize: 15, paddingRight: 28 },
   typeStats: { color: Palette.ink, opacity: 0.55, fontSize: 11, lineHeight: 15 },
   typePrice: { color: Palette.gold, fontWeight: '800', fontSize: 13 },
   roomGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
@@ -1020,6 +1325,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.08)',
   },
+  issueCard: {
+    gap: 6,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    backgroundColor: Palette.white,
+  },
+  issueTitle: { color: Palette.ink, fontWeight: '800', fontSize: 15 },
   roomPhotoWrap: { position: 'relative' },
   roomPhoto: { width: '100%', aspectRatio: 4 / 3, backgroundColor: Palette.ink },
   roomFlag: {
@@ -1042,7 +1356,69 @@ const styles = StyleSheet.create({
   roomType: { color: Palette.ink, fontWeight: '700', opacity: 0.75 },
   roomMeta: { color: Palette.ink, opacity: 0.55, fontSize: 12 },
   roomPrice: { color: Palette.gold, fontWeight: '800', fontSize: 14, marginTop: 2 },
-  roomActions: { flexDirection: 'row', flexWrap: 'nowrap', gap: 8, marginTop: 8 },
+  roomActions: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'stretch', gap: 6, marginTop: 8 },
+  lineBtn: {
+    flex: 1,
+    minWidth: 0,
+    height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+  },
+  lineBtnGold: { backgroundColor: Palette.gold },
+  lineBtnGhost: { backgroundColor: Palette.white, borderWidth: 1, borderColor: 'rgba(20,22,34,0.16)' },
+  lineBtnOff: { opacity: 0.4 },
+  lineBtnText: { color: Palette.ink, fontWeight: '800', fontSize: 12, flexShrink: 1 },
+  lineBadge: {
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: Palette.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lineBadgeText: { color: Palette.gold, fontSize: 10, fontWeight: '800' },
+  signalSheet: {
+    width: '100%',
+    maxWidth: 560,
+    maxHeight: '80%',
+    alignSelf: 'center',
+    backgroundColor: Palette.white,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    padding: 16,
+    gap: 12,
+    zIndex: 2,
+  },
+  signalHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  signalKicker: { color: Palette.gold, fontWeight: '800', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
+  signalTitle: { color: Palette.ink, fontWeight: '800', fontSize: 22 },
+  signalList: { gap: 10, paddingBottom: 4 },
+  signalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 72,
+    borderRadius: 16,
+    backgroundColor: Palette.white,
+    borderWidth: 1,
+    borderColor: 'rgba(20,22,34,0.08)',
+    overflow: 'hidden',
+    paddingRight: 14,
+  },
+  signalRail: { width: 6, alignSelf: 'stretch' },
+  signalRailOpen: { backgroundColor: Palette.ink },
+  signalRailWait: { backgroundColor: Palette.gold },
+  signalRailDone: { backgroundColor: Palette.gold },
+  signalCopy: { flex: 1, minWidth: 0, paddingVertical: 12, gap: 2 },
+  signalName: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
+  signalDesc: { color: Palette.ink, opacity: 0.75, fontSize: 13, lineHeight: 18 },
+  signalMeta: { color: Palette.ink, opacity: 0.5, fontSize: 12, marginTop: 2 },
   meta: { color: Palette.ink, opacity: 0.58, fontSize: 13 },
   goldLine: { color: Palette.gold, fontWeight: '800', fontSize: 13 },
   sectionTitle: { color: Palette.ink, fontWeight: '800', fontSize: 18 },
@@ -1118,7 +1494,26 @@ const styles = StyleSheet.create({
   },
   noticeTitle: { color: Palette.ink, fontWeight: '800' },
   formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  discountBox: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    backgroundColor: 'rgba(212,175,55,0.12)',
+  },
   field: { gap: 6, minWidth: 240, flexGrow: 1, flexBasis: 240 },
+  fieldCompact: { minWidth: 140, flexBasis: 140 },
+  categoryTools: {
+    gap: 10,
+    padding: 10,
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(20,22,34,0.08)',
+    backgroundColor: Palette.white,
+  },
+  seekInline: { gap: 8 },
   fieldLabel: { color: Palette.ink, fontWeight: '700', fontSize: 12 },
   input: {
     borderWidth: 1,
@@ -1138,4 +1533,16 @@ const styles = StyleSheet.create({
   compTitle: { color: Palette.ink, fontWeight: '800' },
   badgeWrap: { gap: 14 },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, paddingVertical: 8 },
+  seek: {
+    gap: 10,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    backgroundColor: Palette.white,
+    marginBottom: 12,
+  },
+  seekTitle: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
+  seekActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  seekHint: { color: Palette.ink, fontWeight: '700', marginBottom: 8 },
 });

@@ -445,6 +445,12 @@ async function seedStaffAccounts(db) {
       aliases: ['fatou@myhotel.test', 'fatou@myhotel.ci'],
     },
     {
+      fullName: 'Ibrahim Traoré',
+      email: 'restaurant@gmail.com',
+      role: 'restaurant',
+      aliases: ['restaurant@myhotel.test'],
+    },
+    {
       fullName: 'Lucie Bamba',
       email: 'proprietaire@gmail.com',
       role: 'owner',

@@ -119,7 +119,6 @@ export default function SettingsScreen() {
           onPress={() => void save()}
         />
       }>
-      <Text style={styles.lead}>Identité de l’hôtel utilisée sur les rapports, badges et documents imprimés.</Text>
       <View style={styles.grid}>
         <Field label="Nom commercial" value={company.name} onChange={(name) => setCompany({ ...company, name })} />
         <Field

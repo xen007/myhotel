@@ -67,6 +67,7 @@ export function GoldBtn({
   compact,
   tiny,
   block,
+  disabled,
 }: {
   label: string;
   onPress: () => void;
@@ -75,6 +76,7 @@ export function GoldBtn({
   compact?: boolean;
   tiny?: boolean;
   block?: boolean;
+  disabled?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   const tone = variant === 'ink' ? styles.btnInk : variant === 'ghost' ? styles.btnGhost : styles.btnGold;
@@ -86,8 +88,10 @@ export function GoldBtn({
     <Pressable
       onHoverIn={() => setHover(true)}
       onHoverOut={() => setHover(false)}
+      disabled={disabled}
       onPress={(event) => {
         event.stopPropagation();
+        if (disabled) return;
         onPress();
       }}
       style={({ pressed }) => [
@@ -95,9 +99,10 @@ export function GoldBtn({
         size === 'compact' && styles.btnCompact,
         size === 'tiny' && styles.btnTiny,
         tone,
-        hover && !pressed && styles.btnHover,
-        pressed && styles.btnPress,
+        !disabled && hover && !pressed && styles.btnHover,
+        !disabled && pressed && styles.btnPress,
         block && styles.btnBlock,
+        disabled && styles.btnDisabled,
         size === 'tiny' && Platform.OS === 'web' ? ({ whiteSpace: 'nowrap' } as object) : null,
       ]}>
       {icon ? <AppIcon name={icon} size={size === 'tiny' ? 12 : size === 'compact' ? 14 : 16} color={iconColor} /> : null}
@@ -169,8 +174,8 @@ const styles = StyleSheet.create({
   panel: {
     backgroundColor: Palette.white,
     borderRadius: 18,
-    padding: 16,
-    gap: 12,
+    padding: 12,
+    gap: 8,
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.06)',
   },
@@ -241,6 +246,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 1 },
+  },
+  btnDisabled: {
+    backgroundColor: 'rgba(20,22,34,0.12)',
+    borderColor: 'rgba(20,22,34,0.16)',
+    borderBottomColor: 'rgba(20,22,34,0.28)',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   btnCompact: {
     paddingHorizontal: 12,

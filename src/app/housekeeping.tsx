@@ -47,6 +47,7 @@ type HkTask = {
   started_at?: string | null;
   finished_at?: string | null;
   due_at?: string | null;
+  notes?: string | null;
   crew?: HkCrew[];
   helpers?: string[];
   issues?: HkIssue[];
@@ -262,7 +263,7 @@ export default function HousekeepingScreen() {
   });
 
   return (
-    <HotelShell title="Entretien" loading={loading && !data} error={error}>
+    <HotelShell title="Sales" loading={loading && !data} error={error}>
       <FilterBar
         query={query}
         onQuery={setQuery}
@@ -297,9 +298,10 @@ export default function HousekeepingScreen() {
               <View style={styles.body}>
                 <View style={styles.head}>
                   <Text style={styles.number}>{task.room_number}</Text>
-                  <StatusBadge label={hkStatusLabel[status] ?? status} tone={statusTone(status)} />
+                  <StatusBadge label={task.priority === 'urgente' ? 'Urgence' : (hkStatusLabel[status] ?? status)} tone={task.priority === 'urgente' ? 'ink' : statusTone(status)} />
                 </View>
                 <Text style={styles.type} numberOfLines={1}>{room?.type ?? 'Chambre'}</Text>
+                {task.notes ? <Text style={styles.time} numberOfLines={2}>{task.notes}</Text> : null}
                 {status === 'non_prise' ? (
                   <Text style={styles.meta} numberOfLines={1}>Étage {room?.floor ?? '—'} · En attente</Text>
                 ) : lead ? (

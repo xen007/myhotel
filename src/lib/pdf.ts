@@ -28,12 +28,20 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
+export type PdfTable = {
+  title: string;
+  columns: string[];
+  widths?: number[];
+  rows: string[][];
+};
+
 export async function deliverPdf(
   filename: string,
   title: string,
   lines: string[],
   mode: 'download' | 'print' = 'download',
   _brand?: PdfBrand,
+  tables?: PdfTable[],
 ) {
   const safeName = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename.replace(/\.(html?|pdf)$/i, '')}.pdf`;
   const token = await getItem('myhotel.auth.token');
@@ -44,7 +52,7 @@ export async function deliverPdf(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ title, lines, filename: safeName }),
+    body: JSON.stringify({ title, lines, filename: safeName, tables }),
   });
   if (!response.ok) {
     throw new Error('Le document PDF n’a pas pu être préparé.');

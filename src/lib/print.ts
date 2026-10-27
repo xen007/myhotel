@@ -26,7 +26,7 @@ function emitDocument(
   company?: CompanyVoucher,
 ) {
   const lines = htmlToLines(html);
-  void deliverPdf(filename, title, lines.length ? lines : [title], mode, company);
+  return deliverPdf(filename, title, lines.length ? lines : [title], mode, company);
 }
 
 function escapeHtml(value: string) {
@@ -502,13 +502,13 @@ function pmsReportHtml(doc: PmsReportDoc, company: CompanyVoucher = {}) {
 }
 
 function openPmsReport(doc: PmsReportDoc, company: CompanyVoucher, mode: 'print' | 'download') {
-  emitDocument(`${doc.title.replace(/\s+/g, '-').toLowerCase()}.pdf`, doc.title, pmsReportHtml(doc, company), mode, company);
+  return emitDocument(`${doc.title.replace(/\s+/g, '-').toLowerCase()}.pdf`, doc.title, pmsReportHtml(doc, company), mode, company);
 }
 
 export function printPmsReport(doc: PmsReportDoc, company: CompanyVoucher = {}) {
-  openPmsReport(doc, company, 'print');
+  return openPmsReport(doc, company, 'print');
 }
 
 export function downloadPmsReport(doc: PmsReportDoc, company: CompanyVoucher = {}) {
-  openPmsReport(doc, company, 'download');
+  return openPmsReport(doc, company, 'download');
 }

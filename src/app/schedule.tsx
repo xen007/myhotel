@@ -33,6 +33,20 @@ const HOURS = Array.from({ length: 18 }, (_, i) => {
 });
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const MONTHS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+function monthCells(cursor: Date) {
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const start = (new Date(year, month, 1).getDay() + 6) % 7;
+  const count = new Date(year, month + 1, 0).getDate();
+  const cells: { key: string; day: number | null }[] = [];
+  for (let index = 0; index < start; index += 1) cells.push({ key: `empty-${index}`, day: null });
+  for (let day = 1; day <= count; day += 1) {
+    cells.push({ key: iso(new Date(year, month, day)), day });
+  }
+  return cells;
+}
 
 function mondayOf(date: Date) {
   const copy = new Date(date);
@@ -42,7 +56,9 @@ function mondayOf(date: Date) {
 }
 
 function iso(date: Date) {
-  return date.toISOString().slice(0, 10);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 function addDays(base: Date, count: number) {
@@ -82,6 +98,11 @@ export default function ScheduleScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pendingShift, setPendingShift] = useState<Shift | null>(null);
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [picked, setPicked] = useState(() => iso(new Date()));
 
   const canManage = user?.role === 'manager' || user?.role === 'owner';
   const isDesktop = width >= Breakpoints.desktop;
@@ -170,106 +191,115 @@ export default function ScheduleScreen() {
   const myRooms = hk.filter((row) => mine(row.attendant));
 
   if (ready && !canManage) {
+    const todayKey = iso(new Date());
+    const cells = monthCells(monthCursor);
+    const busyDays = new Set([
+      ...myShifts.map((row) => String(row.day).slice(0, 10)),
+      ...myJobs.map((row) => String(row.day).slice(0, 10)),
+    ]);
+    const pickedShift = myShifts.find((row) => String(row.day).slice(0, 10) === picked);
+    const pickedJobs = myJobs.filter((row) => String(row.day).slice(0, 10) === picked);
     return (
       <HotelShell title="Mon planning" loading={loading && !data} error={error}>
-        <View style={[styles.weekBar, isMobile && styles.weekBarMobile]}>
-          {isMobile ? (
-            <Pressable onPress={() => setAnchor(addDays(anchor, -7))} hitSlop={8} style={styles.weekNav}>
-              <AppIcon name="chevron-left" size={18} color={Palette.ink} />
-            </Pressable>
-          ) : (
-            <GoldBtn tiny icon="chevron-left" label="Semaine" variant="ghost" onPress={() => setAnchor(addDays(anchor, -7))} />
-          )}
-          <View style={styles.weekCopy}>
-            {isMobile ? null : <Text style={styles.weekKicker}>Semaine</Text>}
-            <Text
-              numberOfLines={1}
-              style={[styles.weekLabel, isMobile && styles.weekLabelMobile, Platform.OS === 'web' ? ({ whiteSpace: 'nowrap' } as object) : null]}>
-              {weekLabel}
-            </Text>
-          </View>
-          {isMobile ? (
-            <Pressable onPress={() => setAnchor(addDays(anchor, 7))} hitSlop={8} style={styles.weekNav}>
-              <AppIcon name="chevron-right" size={18} color={Palette.ink} />
-            </Pressable>
-          ) : (
-            <GoldBtn tiny icon="chevron-right" label="Suivante" variant="ghost" onPress={() => setAnchor(addDays(anchor, 7))} />
-          )}
-        </View>
-
-        <View style={styles.panel}>
-          <View style={styles.panelHead}>
-            <Text style={styles.panelTitle}>Mon emploi du temps</Text>
-            <Text style={styles.panelCount}>{myShifts.filter((row) => days.includes(String(row.day).slice(0, 10))).length}</Text>
-          </View>
-          {days.map((day, index) => {
-            const cell = myShifts.find((row) => String(row.day).slice(0, 10) === day);
-            return (
-              <View key={day} style={styles.mineDay}>
-                <View style={styles.mineWhen}>
-                  <Text style={styles.name}>{WEEKDAYS[index]}</Text>
-                  <Text style={styles.role}>{prettyDate(day)}</Text>
-                </View>
-                {cell ? (
-                  <View style={styles.jobCopy}>
-                    <Text style={styles.name}>
-                      {String(cell.start_hour).slice(0, 5)}–{String(cell.end_hour).slice(0, 5)}
-                    </Text>
-                    <Text style={styles.role}>{cell.task || 'Service'}</Text>
+        <Text style={styles.ownKicker}>{user?.full_name}</Text>
+        <View style={[styles.planLayout, isDesktop && styles.planLayoutDesktop]}>
+          <View style={styles.calCard}>
+            <View style={styles.calHead}>
+              <Pressable onPress={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() - 1, 1))} hitSlop={8}>
+                <AppIcon name="chevron-left" size={20} color={Palette.ink} />
+              </Pressable>
+              <Text style={styles.calTitle}>{MONTHS[monthCursor.getMonth()]} {monthCursor.getFullYear()}</Text>
+              <Pressable onPress={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1))} hitSlop={8}>
+                <AppIcon name="chevron-right" size={20} color={Palette.ink} />
+              </Pressable>
+            </View>
+            <View style={styles.legend}>
+              <View style={[styles.legendDot, { backgroundColor: 'rgba(212,175,55,0.45)' }]} />
+              <Text style={styles.legendText}>Service</Text>
+              <View style={[styles.legendDot, { backgroundColor: 'rgba(20,22,34,0.28)' }]} />
+              <Text style={styles.legendText}>Repos</Text>
+            </View>
+            <View style={styles.weekRow}>
+              {WEEKDAYS.map((label) => (
+                <Text key={label} style={styles.weekDay}>{label}</Text>
+              ))}
+            </View>
+            <View style={styles.calGrid}>
+              {cells.map((cell) => {
+                if (!cell.day) return <View key={cell.key} style={styles.cellSlot} />;
+                const onDuty = busyDays.has(cell.key);
+                const selected = cell.key === picked;
+                return (
+                  <View key={cell.key} style={styles.cellSlot}>
+                    <Pressable
+                      onPress={() => setPicked(cell.key)}
+                      style={[
+                        styles.day,
+                        { backgroundColor: onDuty ? 'rgba(212,175,55,0.42)' : 'rgba(20,22,34,0.22)' },
+                        cell.key === todayKey && styles.dayToday,
+                        selected && { borderWidth: 2, borderColor: Palette.ink },
+                      ]}>
+                      <Text style={[styles.dayText, { color: Palette.ink }]}>{cell.day}</Text>
+                    </Pressable>
                   </View>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.dayCard}>
+            <Text style={styles.ownPanelTitle}>{prettyDate(picked)}</Text>
+            <View style={styles.detailRow}>
+              <View style={[styles.detailRail, pickedShift ? styles.detailRailOn : null]} />
+              <View style={styles.detailCopy}>
+                <Text style={styles.detailTitle}>{pickedShift ? 'Service' : 'Repos'}</Text>
+                <Text style={styles.detailMeta}>
+                  {pickedShift
+                    ? `${String(pickedShift.start_hour).slice(0, 5)} – ${String(pickedShift.end_hour).slice(0, 5)}${pickedShift.task ? ` · ${pickedShift.task}` : ''}`
+                    : 'Aucune vacation ce jour.'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.ownPanelTitle}>Tâches</Text>
+            {pickedJobs.map((item) => (
+              <View key={item.id} style={styles.detailRow}>
+                <View style={[styles.detailRail, item.status === 'fait' ? null : styles.detailRailOn]} />
+                <View style={styles.detailCopy}>
+                  <Text style={styles.detailTitle}>{item.title}</Text>
+                  {item.notes ? <Text style={styles.detailMeta}>{item.notes}</Text> : null}
+                  <Text style={styles.detailMeta}>{jobLabel(item.status)}</Text>
+                </View>
+                {item.status !== 'fait' ? (
+                  <Pressable
+                    onPress={() => void setJobStatus(item, item.status === 'a_faire' ? 'en_cours' : 'fait')}
+                    style={styles.dutyBtn}>
+                    <Text style={styles.dutyBtnText}>{item.status === 'a_faire' ? 'Démarrer' : 'Terminer'}</Text>
+                  </Pressable>
                 ) : (
-                  <Text style={styles.role}>Repos</Text>
+                  <AppIcon name="check-circle" size={18} color={Palette.gold} />
                 )}
               </View>
-            );
-          })}
-        </View>
-
-        <View style={styles.panel}>
-          <View style={styles.panelHead}>
-            <Text style={styles.panelTitle}>Mes tâches</Text>
-            <Text style={styles.panelCount}>{myJobs.length}</Text>
-          </View>
-          {myJobs.map((item) => (
-            <View key={item.id} style={styles.job}>
-              <View style={styles.jobCopy}>
-                <Text style={styles.name}>{item.title}</Text>
-                <Text style={styles.role}>{prettyDate(item.day)}</Text>
-                {item.notes ? <Text style={styles.note}>{item.notes}</Text> : null}
-              </View>
-              <StatusBadge label={jobLabel(item.status)} tone={jobTone(item.status)} />
-              {item.status !== 'fait' ? (
-                <GoldBtn
-                  tiny
-                  label={item.status === 'a_faire' ? 'Démarrer' : 'Terminer'}
-                  onPress={() => void setJobStatus(item, item.status === 'a_faire' ? 'en_cours' : 'fait')}
-                />
-              ) : null}
-            </View>
-          ))}
-          {!myJobs.length ? <Text style={styles.empty}>Aucune tâche à effectuer.</Text> : null}
-        </View>
-
-        {myRooms.length ? (
-          <View style={styles.panel}>
-            <View style={styles.panelHead}>
-              <Text style={styles.panelTitle}>Chambres à traiter</Text>
-              <Text style={styles.panelCount}>{myRooms.length}</Text>
-            </View>
-            {myRooms.map((task) => (
-              <View key={task.id} style={styles.job}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{task.room_number}</Text>
-                </View>
-                <View style={styles.jobCopy}>
-                  <Text style={styles.name}>Chambre {task.room_number}</Text>
-                  <Text style={styles.role}>{task.status}</Text>
-                </View>
-                <StatusBadge label={task.priority === 'urgente' ? 'Urgence' : 'Statut'} tone={task.priority === 'urgente' ? 'gold' : 'muted'} />
-              </View>
             ))}
+            {!pickedJobs.length ? <Text style={styles.ownEmpty}>Aucune tâche ce jour.</Text> : null}
+
+            {picked === todayKey ? (
+              <>
+                <Text style={styles.ownPanelTitle}>Chambres</Text>
+                {myRooms.map((task) => (
+                  <View key={task.id} style={styles.detailRow}>
+                    <View style={styles.detailRail} />
+                    <View style={styles.detailCopy}>
+                      <Text style={styles.detailTitle}>Chambre {task.room_number}</Text>
+                      <Text style={styles.detailMeta}>{task.priority === 'urgente' ? 'Urgence' : task.status}</Text>
+                    </View>
+                  </View>
+                ))}
+                {!myRooms.length ? <Text style={styles.ownEmpty}>Aucune chambre assignée.</Text> : null}
+              </>
+            ) : null}
           </View>
-        ) : null}
+        </View>
       </HotelShell>
     );
   }
@@ -686,4 +716,90 @@ const styles = StyleSheet.create({
     color: Palette.ink,
   },
   formError: { color: Palette.ink, fontWeight: '700', backgroundColor: 'rgba(212,175,55,0.18)', padding: 10, borderRadius: 12 },
+  ownHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  ownNav: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: Palette.white,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ownKicker: { color: Palette.gold, fontWeight: '800', fontSize: 12 },
+  ownTitle: { color: Palette.ink, fontWeight: '800', fontSize: 18 },
+  planLayout: { gap: 16 },
+  planLayoutDesktop: { flexDirection: 'row', alignItems: 'flex-start' },
+  calCard: {
+    width: '100%',
+    maxWidth: 300,
+    alignSelf: 'flex-start',
+    backgroundColor: Palette.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    padding: 10,
+    gap: 4,
+  },
+  calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  calTitle: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
+  legend: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: Palette.ink, fontSize: 12, marginRight: 8 },
+  weekRow: { flexDirection: 'row' },
+  weekDay: { width: '14.28%', textAlign: 'center', color: Palette.ink, opacity: 0.45, fontSize: 10, fontWeight: '700' },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  cellSlot: { width: '14.28%', height: 28, padding: 1 },
+  day: { flex: 1, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  dayToday: { borderWidth: 2, borderColor: Palette.gold },
+  daySelected: { borderWidth: 2, borderColor: Palette.gold },
+  dayText: { fontSize: 11, fontWeight: '800' },
+  dayCard: {
+    flex: 1,
+    minWidth: 260,
+    gap: 10,
+    backgroundColor: Palette.white,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    padding: 16,
+  },
+  ownPanelTitle: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
+  ownEmpty: { color: Palette.ink, opacity: 0.5 },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 58,
+    borderRadius: 16,
+    backgroundColor: Palette.white,
+    borderWidth: 1,
+    borderColor: 'rgba(20,22,34,0.08)',
+    overflow: 'hidden',
+    paddingRight: 12,
+  },
+  detailRail: { width: 6, alignSelf: 'stretch', backgroundColor: Palette.ink },
+  detailRailOn: { backgroundColor: Palette.gold },
+  detailCopy: { flex: 1, minWidth: 0, paddingVertical: 10, gap: 2 },
+  detailTitle: { color: Palette.ink, fontWeight: '800', fontSize: 15 },
+  detailMeta: { color: Palette.ink, opacity: 0.6, fontSize: 13 },
+  dutyBtn: {
+    borderRadius: 999,
+    backgroundColor: Palette.gold,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  dutyBtnText: { color: Palette.ink, fontWeight: '800', fontSize: 12 },
+  ownRooms: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  ownRoom: {
+    minWidth: 88,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    backgroundColor: Palette.ink,
+    alignItems: 'center',
+  },
+  ownRoomNo: { color: Palette.gold, fontWeight: '800', fontSize: 18 },
+  ownRoomMeta: { color: Palette.white, fontSize: 11, marginTop: 2 },
 });

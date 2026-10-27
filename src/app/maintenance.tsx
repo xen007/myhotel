@@ -35,7 +35,6 @@ export default function MaintenanceScreen() {
     <HotelShell
       back
       title="Service maintenance"
-      subtitle="Urgences, bons de travaux, historique, préventif"
       loading={loading}
       error={error}>
       <Chips

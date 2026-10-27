@@ -18,16 +18,38 @@ const TAB_ORDER = [
   '/stock',
 ];
 
+const RECEPTION_TABS = ['/home', '/reservations', '/pos', '/messages'];
+const RESTAURANT_TABS = ['/home', '/daily', '/orders', '/service'];
+const CLIENT_TABS = ['/home', '/browse', '/table', '/note'];
+
+const RECEPTION_LABEL: Record<string, string> = {
+  '/home': 'Accueil',
+  '/reservations': 'Réservation',
+  '/pos': 'Vente',
+  '/messages': 'Messagerie',
+};
+
 const SHORT_LABEL: Record<string, string> = {
   '/home': 'Accueil',
   '/schedule': 'Planning',
-  '/housekeeping': 'Statut',
+  '/housekeeping': 'Sales',
   '/messages': 'Msg.',
   '/issues': 'Signal.',
   '/reservations': 'Réserv.',
   '/rooms': 'Chambres',
   '/pos': 'Ventes',
-  '/stock': 'Stocks',
+  '/stock': 'Économat',
+  '/restaurant': 'Restaurant',
+  '/service': 'Vente',
+  '/orders': 'Commandes',
+  '/daily': 'Du jour',
+  '/drinks': 'Boisson',
+  '/kitchen': 'Stock',
+  '/browse': 'Chambres',
+  '/table': 'Restaurant',
+  '/stay': 'Historique',
+  '/note': 'Note',
+  '/clean': 'Nettoyage',
 };
 
 export function BottomTabBar({
@@ -36,15 +58,18 @@ export function BottomTabBar({
   onNavigate,
   onMenu,
   menuOpen,
+  role,
 }: {
   links: WorkspaceLink[];
   pathname: string;
   onNavigate: (href: string) => void;
   onMenu: () => void;
   menuOpen: boolean;
+  role?: string | null;
 }) {
   const insets = useSafeAreaInsets();
-  const tabs = TAB_ORDER.map((href) => links.find((item) => item.href === href)).filter(Boolean).slice(0, 4) as WorkspaceLink[];
+  const order = role === 'receptionist' ? RECEPTION_TABS : role === 'restaurant' ? RESTAURANT_TABS : role === 'client' ? CLIENT_TABS : TAB_ORDER;
+  const tabs = order.map((href) => links.find((item) => item.href === href)).filter(Boolean).slice(0, 4) as WorkspaceLink[];
 
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -57,7 +82,7 @@ export function BottomTabBar({
                 <AppIcon name={item.icon} size={22} color={active ? Palette.ink : Palette.ink} />
               </View>
               <Text numberOfLines={1} style={[styles.label, active && styles.labelOn]}>
-                {SHORT_LABEL[item.href] ?? item.label}
+                {role === 'receptionist' ? (RECEPTION_LABEL[item.href] ?? item.label) : role === 'restaurant' || role === 'client' ? (SHORT_LABEL[item.href] ?? item.label) : (SHORT_LABEL[item.href] ?? item.label)}
               </Text>
             </Pressable>
           );
@@ -104,9 +129,9 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   iconWrap: {
-    width: 42,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -119,7 +144,7 @@ const styles = StyleSheet.create({
   label: {
     color: Palette.ink,
     opacity: 0.5,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
   },
   labelOn: {

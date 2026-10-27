@@ -116,7 +116,7 @@ async function pickFileWeb(): Promise<PendingFile | null> {
   });
 }
 
-export default function MessagesScreen() {
+export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
   const { token, user, ready } = useAuth();
   const { width } = useWindowDimensions();
   const [data, setData] = useState<Payload | null>(null);
@@ -158,7 +158,7 @@ export default function MessagesScreen() {
   }, [load]);
 
   const threads = data?.threads ?? [];
-  const contacts = data?.contacts ?? [];
+  const contacts = (data?.contacts ?? []).filter((item) => !clientDesk || item.role === 'receptionist');
   const messages = useMemo(
     () => (data?.messages ?? []).filter((item) => item.thread_id === threadId),
     [data?.messages, threadId],
@@ -313,7 +313,7 @@ export default function MessagesScreen() {
           );
         })}
         {!rows.length ? (
-          <Text style={styles.empty}>Aucune discussion. Touchez Nouveau ou + pour écrire à un collègue.</Text>
+          <Text style={styles.empty}>{clientDesk ? 'Aucune discussion. Touchez Nouveau pour écrire à la réception.' : 'Aucune discussion. Touchez Nouveau ou + pour écrire à un collègue.'}</Text>
         ) : null}
       </ScrollView>
       <Pressable onPress={() => setPicker(true)} style={styles.fab} accessibilityLabel="Nouvelle conversation">
@@ -420,12 +420,12 @@ export default function MessagesScreen() {
           <Pressable style={styles.overlayFill} onPress={() => setPicker(false)} />
           <View style={styles.dialog}>
             <View style={styles.dialogHead}>
-              <Text style={styles.dialogTitle}>Nouvelle conversation</Text>
+              <Text style={styles.dialogTitle}>{clientDesk ? 'Écrire à la réception' : 'Nouvelle conversation'}</Text>
               <Pressable onPress={() => setPicker(false)} hitSlop={10}>
                 <AppIcon name="x-circle" size={22} color={Palette.ink} />
               </Pressable>
             </View>
-            <TextInput value={pickerQuery} onChangeText={setPickerQuery} placeholder="Rechercher un collègue…" style={styles.search} />
+            <TextInput value={pickerQuery} onChangeText={setPickerQuery} placeholder={clientDesk ? 'Rechercher un réceptionniste…' : 'Rechercher un collègue…'} style={styles.search} />
             <ScrollView style={styles.pickerList}>
               {pickerContacts.map((item) => (
                 <Pressable key={item.id} onPress={() => startChat(item)} style={styles.pickRow}>
@@ -844,3 +844,7 @@ const styles = StyleSheet.create({
     }),
   },
 });
+
+export default function MessagesScreen() {
+  return <MessageDesk />;
+}

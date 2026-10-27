@@ -33,9 +33,57 @@ export type DashPayload = {
   series: DashSeries[];
   suggestions?: { open: number; total: number };
   pos_count_today?: number;
+  restaurant?: {
+    open: number;
+    today_count: number;
+    today_total: number;
+    dishes: number;
+    food?: number;
+    drinks?: number;
+    daily?: number;
+    low: number;
+    goods_low?: number;
+    queue?: { id: number; guest_name: string; room_number?: string | null; total: number; status: string }[];
+  };
 };
 
 type Slice = { label: string; value: number; color: string };
+
+function RestaurantHome({ service }: { service: DashPayload['restaurant'] }) {
+  return (
+    <>
+      <View style={styles.kpis}>
+        <Kpi icon="receipt" label="À servir" value={String(service?.open ?? 0)} />
+        <Kpi icon="wallet" label="Service" value={money(service?.today_total ?? 0)} hint="Aujourd’hui" />
+        <Kpi icon="star" label="Menu du jour" value={String(service?.daily ?? 0)} hint={`${service?.food ?? 0} plats`} />
+        <Kpi icon="coffee" label="Boissons" value={String(service?.drinks ?? 0)} />
+        <Kpi icon="cabinet" label="Stock bas" value={String((service?.goods_low ?? 0) + (service?.low ?? 0))} />
+      </View>
+      <View style={styles.row}>
+        <Card title="Commandes à servir">
+          <View style={styles.mini}>
+            {(service?.queue ?? []).map((row) => (
+              <Mini
+                key={row.id}
+                label={`${row.guest_name}${row.room_number ? ` · Ch. ${row.room_number}` : ' · Comptoir'}`}
+                value={money(row.total)}
+              />
+            ))}
+            {!(service?.queue ?? []).length ? <Mini label="Aucune commande en attente" value="—" /> : null}
+          </View>
+        </Card>
+        <Card title="Carte et réserve">
+          <View style={styles.mini}>
+            <Mini label="Plats au menu" value={String(service?.food ?? 0)} />
+            <Mini label="Boissons" value={String(service?.drinks ?? 0)} />
+            <Mini label="Menu du jour" value={String(service?.daily ?? 0)} />
+            <Mini label="Matières sous le seuil" value={String(service?.goods_low ?? 0)} />
+          </View>
+        </Card>
+      </View>
+    </>
+  );
+}
 
 export function RoleDashboard({
   data,
@@ -47,6 +95,8 @@ export function RoleDashboard({
 }) {
   const hk = role === 'housekeeping';
   const rec = role === 'receptionist';
+  const resto = role === 'restaurant';
+  const service = data.restaurant;
   const roomSlices: Slice[] = [
     { label: 'Occupées', value: data.rooms.occupied, color: Palette.ink },
     { label: 'Libres', value: data.rooms.available, color: Palette.gold },
@@ -65,7 +115,9 @@ export function RoleDashboard({
 
   return (
     <View style={styles.page}>
-      {hk ? (
+      {resto ? (
+        <RestaurantHome service={service} />
+      ) : hk ? (
         <View style={styles.kpis}>
           <Kpi icon="error-circle" label="Urgences" value={String(data.housekeeping.urgente)} />
           <Kpi icon="time" label="Non prises" value={String(data.housekeeping.non_prise)} />
@@ -87,10 +139,9 @@ export function RoleDashboard({
         </View>
       )}
 
-      {rec ? (
-        <>
+      {resto ? null : rec ? (
         <View style={styles.row}>
-          <Card title="Réservations · 7 jours" hint="Arrivées et départs">
+          <Card title="Arrivées et départs" hint="7 jours">
             <Bars
               items={data.series.map((row) => ({
                 label: row.label,
@@ -113,7 +164,6 @@ export function RoleDashboard({
             </View>
           </Card>
         </View>
-        </>
       ) : (
       <View style={styles.row}>
         <Card title={hk ? 'Répartition des chambres' : 'Occupation'} hint={hk ? 'Statut' : `${data.occupancy_pct} % aujourd’hui`}>
@@ -131,7 +181,7 @@ export function RoleDashboard({
           </View>
         </Card>
 
-        <Card title={hk ? 'Prises en charge · 7 jours' : 'Occupation · 7 jours'} hint="Courbe quotidienne">
+        <Card title={hk ? 'Prises en charge · 7 jours' : 'Occupation · 7 jours'}>
           <Bars
             items={data.series.map((row) => ({
               label: row.label,
@@ -150,30 +200,30 @@ export function RoleDashboard({
       </View>
       )}
 
-      {rec ? null : <View style={styles.row}>
+      {role === 'owner' ? <RestaurantHome service={service} /> : null}
+      {rec || resto ? null : <View style={styles.row}>
         {hk ? (
           <>
-            <Card title="Vos statistiques" hint="Chambres prises en charge">
+            <Card title="Vos statistiques">
               <View style={styles.rings}>
                 <Ring value={data.agent.today} label="Aujourd’hui" />
                 <Ring value={data.agent.total} label="Total" />
               </View>
             </Card>
-            <Card title="Signalements ouverts" hint="À transmettre à la gérance">
+            <Card title="Signalements ouverts">
               <Text style={styles.big}>{data.housekeeping.issues_open}</Text>
-              <Text style={styles.hint}>Prêtes aujourd’hui : {data.housekeeping.pret_today}</Text>
             </Card>
           </>
         ) : (
           <>
-            <Card title="Activité réception" hint="En cours">
+            <Card title="Activité réception">
               <View style={styles.mini}>
                 <Mini label="Séjours en cours" value={String(data.reservations.in_house)} />
                 <Mini label="Nb ventes du jour" value={String(data.pos_count_today ?? 0)} />
                 <Mini label="Somme des ventes" value={money(data.pos_today)} />
               </View>
             </Card>
-            <Card title="Statut" hint="À surveiller">
+            <Card title="Statut">
               <View style={styles.mini}>
                 <Mini label="Urgences" value={String(data.housekeeping.urgente)} />
                 <Mini label="Non prises" value={String(data.housekeeping.non_prise)} />
@@ -182,7 +232,7 @@ export function RoleDashboard({
               </View>
             </Card>
             {role === 'manager' || role === 'owner' ? (
-              <Card title="Encaissements" hint="Factures">
+              <Card title="Encaissements">
                 <View style={styles.mini}>
                   <Mini label="Payé" value={money(data.billing.paid)} />
                   <Mini label="En attente" value={money(data.billing.pending)} />
@@ -308,14 +358,14 @@ function Bars({ items, max }: { items: { label: string; value: number; alt: numb
 }
 
 const styles = StyleSheet.create({
-  page: { gap: 16 },
+  page: { gap: 10 },
   kpis: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   kpi: {
     flexGrow: 1,
     flexBasis: 140,
     backgroundColor: Palette.white,
     borderRadius: 16,
-    padding: 14,
+    padding: 10,
     borderWidth: 1,
     borderColor: Palette.gold,
     borderBottomWidth: 4,
@@ -323,15 +373,15 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   kpiIcon: {
-    width: 32,
-    height: 32,
+    width: 26,
+    height: 26,
     borderRadius: 10,
     backgroundColor: Palette.gold,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
   },
-  kpiValue: { color: Palette.ink, fontWeight: '800', fontSize: 24 },
+  kpiValue: { color: Palette.ink, fontWeight: '800', fontSize: 20 },
   kpiLabel: { color: Palette.ink, opacity: 0.6, fontWeight: '700', fontSize: 12 },
   kpiHint: { color: Palette.gold, fontWeight: '800', fontSize: 11 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
@@ -340,15 +390,15 @@ const styles = StyleSheet.create({
     flexBasis: 280,
     backgroundColor: Palette.white,
     borderRadius: Radius.card,
-    padding: 16,
-    gap: 10,
+    padding: 12,
+    gap: 8,
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.08)',
   },
-  cardTitle: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
+  cardTitle: { color: Palette.ink, fontWeight: '800', fontSize: 14 },
   hint: { color: Palette.ink, opacity: 0.5, fontSize: 12, marginTop: -6 },
   donutRow: { flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
-  donutWrap: { width: 132, height: 132, alignItems: 'center', justifyContent: 'center' },
+  donutWrap: { width: 108, height: 108, alignItems: 'center', justifyContent: 'center' },
   legend: { flex: 1, minWidth: 140, gap: 8 },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   swatch: { width: 10, height: 10, borderRadius: 99 },
@@ -357,9 +407,9 @@ const styles = StyleSheet.create({
   rings: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 8 },
   ringBox: { alignItems: 'center', gap: 8 },
   ringCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     borderWidth: 8,
     borderColor: Palette.gold,
     alignItems: 'center',
@@ -377,7 +427,7 @@ const styles = StyleSheet.create({
   },
   ringValue: { color: Palette.ink, fontWeight: '800', fontSize: 22 },
   ringCaption: { color: Palette.ink, opacity: 0.5, fontSize: 11, fontWeight: '700' },
-  bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 140, paddingTop: 8 },
+  bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 108, paddingTop: 4 },
   barCol: { flex: 1, alignItems: 'center', gap: 6, height: '100%' },
   barTrack: {
     flex: 1,
@@ -396,10 +446,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 120,
     backgroundColor: 'rgba(20,22,34,0.04)',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 12,
+    padding: 8,
   },
   miniValue: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
   miniLabel: { color: Palette.ink, opacity: 0.55, fontSize: 11, marginTop: 4, fontWeight: '700' },
-  big: { color: Palette.gold, fontWeight: '800', fontSize: 42 },
+  big: { color: Palette.gold, fontWeight: '800', fontSize: 28 },
 });

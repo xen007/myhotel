@@ -12,6 +12,7 @@ export const roomStatusLabel: Record<string, string> = {
   nettoyage: 'Nettoyage',
   maintenance: 'Maintenance',
   reservee: 'Réservée',
+  hors_service: 'Hors service',
 };
 
 export const staffStatusLabel: Record<string, string> = {

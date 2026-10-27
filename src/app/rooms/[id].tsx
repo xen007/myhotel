@@ -1,11 +1,11 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon, type BoxIconName } from '@/components/box-icon';
 import { FilterBar } from '@/components/hotel/filter-bar';
 import { HotelShell, StatusBadge } from '@/components/hotel/hotel-shell';
-import { RoomMedia } from '@/components/hotel/room-media';
+import { RoomGallery } from '@/components/hotel/room-gallery';
 import { RoomStatsPanel } from '@/components/hotel/room-stats-panel';
 import { Breakpoints, Palette, Radius } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
@@ -28,16 +28,15 @@ export default function RoomDetailScreen() {
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [mediaIndex, setMediaIndex] = useState(0);
   const [query, setQuery] = useState('');
   const [histStatus, setHistStatus] = useState('all');
+  const [statsOpen, setStatsOpen] = useState(false);
 
   async function load() {
     if (!token || !id) return;
     try {
       const data = await roomRequest(token, String(id));
       setRoom(data);
-      setMediaIndex(0);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chargement impossible.');
@@ -70,11 +69,12 @@ export default function RoomDetailScreen() {
       ...videos.map((uri) => ({ kind: 'video' as const, uri })),
     ];
   }, [room]);
-  const current = slides[mediaIndex] ?? slides[0];
   const poster = room?.photos?.[0] ?? room?.photo ?? null;
 
   if (ready && !user) return <Redirect href="/welcome" />;
 
+  const canOpenStats = user?.role === 'manager' || user?.role === 'owner';
+  const showMoney = canOpenStats && statsOpen;
   return (
     <HotelShell
       back
@@ -82,54 +82,15 @@ export default function RoomDetailScreen() {
       loading={loading}
       error={error}
       right={
-        user?.role === 'receptionist' ? null : (
-        <View style={styles.statIcon}>
-          <AppIcon name="bar-chart-alt-2" size={18} color={Palette.ink} />
-        </View>
-        )
+        canOpenStats ? (
+          <Pressable onPress={() => setStatsOpen((open) => !open)} style={[styles.statIcon, statsOpen && styles.statIconOn]}>
+            <AppIcon name="bar-chart-alt-2" size={18} color={statsOpen ? Palette.gold : Palette.ink} />
+          </Pressable>
+        ) : null
       }>
       {room ? (
         <View style={styles.wrap}>
-          {current ? (
-            <View style={styles.carousel}>
-              <RoomMedia
-                compact
-                variant={current.kind}
-                photo={current.kind === 'image' ? current.uri : poster}
-                video={current.kind === 'video' ? current.uri : undefined}
-              />
-              {slides.length > 1 ? (
-                <>
-                  <Pressable
-                    style={[styles.nav, styles.navLeft]}
-                    onPress={() => setMediaIndex((i) => (i === 0 ? slides.length - 1 : i - 1))}>
-                    <AppIcon name="chevron-left" size={18} color={Palette.ink} />
-                  </Pressable>
-                  <Pressable
-                    style={[styles.nav, styles.navRight]}
-                    onPress={() => setMediaIndex((i) => (i + 1) % slides.length)}>
-                    <AppIcon name="chevron-right" size={18} color={Palette.ink} />
-                  </Pressable>
-                </>
-              ) : null}
-              <View style={styles.mediaBadge}>
-                <Text style={styles.mediaBadgeText}>
-                  {current.kind === 'video' ? 'Vidéo' : 'Photo'} {mediaIndex + 1}/{slides.length}
-                </Text>
-              </View>
-              {slides.length > 1 ? (
-                <View style={styles.dots}>
-                  {slides.map((slide, index) => (
-                    <Pressable
-                      key={`${slide.kind}-${index}`}
-                      onPress={() => setMediaIndex(index)}
-                      style={[styles.dot, index === mediaIndex && styles.dotActive]}
-                    />
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          ) : null}
+          {slides.length ? <RoomGallery slides={slides} poster={poster} wide={!narrow} /> : null}
           <View style={styles.panel}>
             <View style={styles.row}>
               <Text style={styles.kicker}>{room.type}</Text>
@@ -139,7 +100,7 @@ export default function RoomDetailScreen() {
             <View style={styles.facts}>
               <Fact label="Étage" value={String(room.floor)} />
               <Fact label="Capacité" value={`${room.capacity} pers.`} />
-              <Fact label="Tarif" value={`${money(room.price_night)} / nuit`} />
+              {showMoney ? <Fact label="Tarif" value={`${money(room.price_night)} / nuit`} /> : null}
             </View>
             <Text style={styles.section}>Équipements</Text>
             <View style={styles.equipGrid}>
@@ -158,9 +119,9 @@ export default function RoomDetailScreen() {
             </View>
           </View>
 
-          {user?.role !== 'receptionist' ? <RoomStatsPanel history={room.history ?? []} /> : null}
+          {showMoney ? <RoomStatsPanel history={room.history ?? []} /> : null}
 
-          <Text style={styles.section}>Historique des clients</Text>
+          <Text style={styles.section}>Occupants</Text>
           <FilterBar
             query={query}
             onQuery={setQuery}
@@ -175,61 +136,93 @@ export default function RoomDetailScreen() {
               { id: 'annulee', label: 'Annulée' },
             ]}
           />
-          {narrow ? (
-            <View style={styles.historyList}>
-              {visibleHistory.map((row) => (
-                <View key={row.id} style={styles.historyCard}>
-                  <View style={styles.row}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.clientName}>{row.guest_name}</Text>
-                      <Text style={styles.lot}>{row.guest_phone || '—'}</Text>
-                    </View>
-                    <StatusBadge
-                      label={reservationStatusLabel[row.status] ?? row.status}
-                      tone={reservationTone[row.status] ?? 'gold'}
-                    />
-                  </View>
-                  <Text style={styles.desc}>
-                    {prettyWhen(row.check_in, row.check_in_time)} → {prettyWhen(row.check_out, row.check_out_time)}
-                  </Text>
-                  <Text style={styles.factValue}>{money(row.total)}</Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-          <View style={styles.table}>
-            <View style={[styles.tr, styles.th]}>
-              <Text style={[styles.td, styles.tdText, styles.colClient, styles.thText]}>Client</Text>
-              <Text style={[styles.td, styles.tdText, styles.colDate, styles.thText]}>Arrivée</Text>
-              <Text style={[styles.td, styles.tdText, styles.colDate, styles.thText]}>Départ</Text>
-              <Text style={[styles.td, styles.tdText, styles.colStatus, styles.thText]}>Statut</Text>
-              <Text style={[styles.td, styles.tdText, styles.colTotal, styles.thText]}>Total</Text>
-            </View>
-            {visibleHistory.map((row, index) => (
-              <View key={row.id} style={[styles.tr, index % 2 ? styles.trAlt : null]}>
-                <View style={[styles.td, styles.colClient]}>
-                  <Text style={styles.clientName}>{row.guest_name}</Text>
-                  <Text style={styles.lot}>{row.guest_phone || '—'}</Text>
-                </View>
-                <Text style={[styles.td, styles.tdText, styles.colDate]}>{prettyWhen(row.check_in, row.check_in_time)}</Text>
-                <Text style={[styles.td, styles.tdText, styles.colDate]}>{prettyWhen(row.check_out, row.check_out_time)}</Text>
-                <View style={[styles.td, styles.colStatus]}>
-                  <StatusBadge
-                    label={reservationStatusLabel[row.status] ?? row.status}
-                    tone={reservationTone[row.status] ?? 'gold'}
-                  />
-                </View>
-                <Text style={[styles.td, styles.tdText, styles.colTotal, { fontWeight: '800' }]}>{money(row.total)}</Text>
-              </View>
-            ))}
-          </View>
-          </ScrollView>
-          )}
-          {!visibleHistory.length ? <Text style={styles.desc}>Aucun séjour ne correspond.</Text> : null}
+          <OccupantList rows={visibleHistory} narrow={narrow} showMoney={showMoney} />
         </View>
       ) : null}
     </HotelShell>
+  );
+}
+
+function initials(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
+function OccupantList({
+  rows,
+  narrow,
+  showMoney,
+}: {
+  rows: NonNullable<Room['history']>;
+  narrow: boolean;
+  showMoney: boolean;
+}) {
+  if (!rows.length) return <Text style={styles.desc}>Aucun occupant pour ce filtre.</Text>;
+  if (narrow) {
+    return (
+      <View style={styles.historyList}>
+        {rows.map((row) => (
+          <View key={row.id} style={styles.historyCard}>
+            <View style={styles.who}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initials(row.guest_name)}</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.clientName} numberOfLines={1}>{row.guest_name}</Text>
+                <Text style={styles.lot}>{row.guest_phone || '—'}</Text>
+              </View>
+              <StatusBadge
+                label={reservationStatusLabel[row.status] ?? row.status}
+                tone={reservationTone[row.status] ?? 'gold'}
+              />
+            </View>
+            <Text style={styles.stayWhen}>
+              {prettyWhen(row.check_in, row.check_in_time)} → {prettyWhen(row.check_out, row.check_out_time)}
+            </Text>
+            {showMoney ? <Text style={styles.factValue}>{money(row.total)}</Text> : null}
+          </View>
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={styles.table}>
+      <View style={[styles.tr, styles.th]}>
+        <Text style={[styles.td, styles.tdText, styles.colClient, styles.thText]}>Client</Text>
+        <Text style={[styles.td, styles.tdText, styles.colDate, styles.thText]}>Arrivée</Text>
+        <Text style={[styles.td, styles.tdText, styles.colDate, styles.thText]}>Départ</Text>
+        <Text style={[styles.td, styles.tdText, styles.colStatus, styles.thText]}>Statut</Text>
+        {showMoney ? <Text style={[styles.td, styles.tdText, styles.colTotal, styles.thText]}>Total</Text> : null}
+      </View>
+      {rows.map((row, index) => (
+        <View key={row.id} style={[styles.tr, index % 2 ? styles.trAlt : null]}>
+          <View style={[styles.td, styles.colClient, styles.who]}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials(row.guest_name)}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.clientName} numberOfLines={1}>{row.guest_name}</Text>
+              <Text style={styles.lot}>{row.guest_phone || '—'}</Text>
+            </View>
+          </View>
+          <Text style={[styles.td, styles.tdText, styles.colDate]}>{prettyWhen(row.check_in, row.check_in_time)}</Text>
+          <Text style={[styles.td, styles.tdText, styles.colDate]}>{prettyWhen(row.check_out, row.check_out_time)}</Text>
+          <View style={[styles.td, styles.colStatus]}>
+            <StatusBadge
+              label={reservationStatusLabel[row.status] ?? row.status}
+              tone={reservationTone[row.status] ?? 'gold'}
+            />
+          </View>
+          {showMoney ? (
+            <Text style={[styles.td, styles.tdText, styles.colTotal, { fontWeight: '800' }]}>{money(row.total)}</Text>
+          ) : null}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -244,45 +237,6 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   wrap: { gap: 16 },
-  carousel: { position: 'relative', maxWidth: 640, width: '100%', alignSelf: 'center' },
-  nav: {
-    position: 'absolute',
-    top: 88,
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: Palette.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navLeft: { left: 10 },
-  navRight: { right: 10 },
-  mediaBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: 'rgba(20,22,34,0.72)',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  mediaBadgeText: { color: Palette.white, fontSize: 11, fontWeight: '700' },
-  dots: {
-    position: 'absolute',
-    bottom: 10,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-  },
-  dotActive: { backgroundColor: Palette.gold, width: 16 },
   panel: {
     backgroundColor: Palette.white,
     borderRadius: Radius.card,
@@ -317,7 +271,7 @@ const styles = StyleSheet.create({
   },
   equipName: { color: Palette.ink, fontWeight: '700' },
   equipCat: { color: Palette.ink, opacity: 0.6, fontSize: 12 },
-  table: { minWidth: 720, backgroundColor: Palette.white, borderRadius: Radius.card, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(20,22,34,0.06)' },
+  table: { width: '100%', backgroundColor: Palette.white, borderRadius: Radius.card, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(20,22,34,0.06)' },
   tr: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   th: { backgroundColor: 'rgba(20,22,34,0.05)' },
   trAlt: { backgroundColor: 'rgba(212,175,55,0.08)' },
@@ -339,6 +293,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.06)',
   },
+  who: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Palette.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { color: Palette.gold, fontWeight: '800', fontSize: 12 },
+  stayWhen: { color: Palette.ink, opacity: 0.7, fontSize: 13 },
   statIcon: {
     width: 40,
     height: 40,
@@ -347,4 +312,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  statIconOn: { backgroundColor: Palette.ink },
 });

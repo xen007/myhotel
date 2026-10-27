@@ -32,7 +32,6 @@ export default function VenuesScreen() {
     <HotelShell
       back
       title="Location des salles"
-      subtitle="Tarif au m², proformas, factures, règlements multi-devises"
       loading={loading}
       error={error}>
       <Chips

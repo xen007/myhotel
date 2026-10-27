@@ -48,7 +48,6 @@ export default function EquipmentScreen() {
     <HotelShell
       back
       title="Équipements & mobilier"
-      subtitle="Inventaire des chambres meublées"
       loading={loading}
       error={error}>
       {groups.map(([category, list]) => (

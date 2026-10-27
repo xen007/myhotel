@@ -866,7 +866,7 @@ function createRequestHandler(db) {
         const user =
           await db.get(
             'SELECT * FROM users WHERE id = ?',
-            [db.lastId()],
+            [await db.lastId()],
           );
 
         await db.run(

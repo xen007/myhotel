@@ -29,7 +29,7 @@ export default function PurchasingScreen() {
   if (ready && !user) return <Redirect href="/welcome" />;
 
   return (
-    <HotelShell back title="Gestion des achats" subtitle="Seuils, commandes, BL → facture, règlements" loading={loading} error={error}>
+    <HotelShell back title="Gestion des achats" loading={loading} error={error}>
       <Chips
         value={tab}
         onChange={setTab}

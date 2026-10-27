@@ -1,25 +1,15 @@
-import { Redirect, useRouter, type Href } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { isStaffRole } from '@/constants/roles';
 import { useAuth } from '@/context/auth-context';
 import { HotelShell } from '@/components/hotel/hotel-shell';
 import { GoldBtn } from '@/components/hotel/kit';
+import { ClientBoard } from '@/components/hotel/client-space';
 import { RoleDashboard, type DashPayload } from '@/components/hotel/role-dashboard';
 import { pmsGet } from '@/lib/api';
 import { money } from '@/lib/format';
-import { deliverPdf, type PdfBrand } from '@/lib/pdf';
-import { Palette } from '@/constants/theme';
-import { AppBar } from '@/components/nav/app-bar';
-import { RightDrawer } from '@/components/nav/right-drawer';
-import { NotificationsPanel } from '@/components/profile/notifications-panel';
-import { ProfilePanel } from '@/components/profile/profile-panel';
-import { useNotifications } from '@/hooks/use-notifications';
+import { deliverPdf, type PdfBrand, type PdfTable } from '@/lib/pdf';
 import { usePms } from '@/hooks/use-pms';
-import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-type Drawer = 'profile' | 'notifications' | null;
 
 export default function HomeScreen() {
   const { user, ready } = useAuth();
@@ -34,19 +24,27 @@ export default function HomeScreen() {
 function StaffHome() {
   const { user, token } = useAuth();
   const { data, error, loading } = usePms<DashPayload>('dashboard');
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
   const receptionist = user?.role === 'receptionist';
   return (
     <HotelShell
-      title="Tableau de bord"
+      title={user?.role === 'restaurant' ? 'Accueil' : 'Tableau de bord'}
       loading={loading && !data}
-      error={error}
+      error={error || reportError}
       right={
         receptionist && token ? (
           <GoldBtn
             tiny
             icon="download"
-            label="Mon rapport"
-            onPress={() => void downloadReceptionDay(token, user?.full_name || 'Réception')}
+            label={reportBusy ? 'Préparation…' : 'Mon rapport'}
+            onPress={() => {
+              setReportBusy(true);
+              setReportError(null);
+              void downloadReceptionDay(token, user?.full_name || 'Réception')
+                .catch((err) => setReportError(err instanceof Error ? err.message : 'Le rapport n’a pas pu être préparé.'))
+                .finally(() => setReportBusy(false));
+            }}
           />
         ) : null
       }>
@@ -56,20 +54,10 @@ function StaffHome() {
 }
 
 async function downloadReceptionDay(token: string, name: string) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [pos, office, company] = await Promise.all([
+  const [day, company] = await Promise.all([
     pmsGet<{
-      sales: {
-        id: number;
-        seller?: string | null;
-        guest_name?: string | null;
-        room_number?: string | null;
-        total: number;
-        at: string;
-      }[];
-    }>(token, 'pos'),
-    pmsGet<{
-      reservations: {
+      date: string;
+      stays: {
         guest_name: string;
         room_number: string;
         room_type?: string;
@@ -78,86 +66,58 @@ async function downloadReceptionDay(token: string, name: string) {
         status: string;
         total: number;
       }[];
-    }>(token, 'front-office'),
+      sales: { id: number; seller?: string | null; guest_name?: string | null; room_number?: string | null; total: number }[];
+      mine: { id: number; guest_name?: string | null; room_number?: string | null; total: number }[];
+    }>(token, 'reports/reception'),
     pmsGet<PdfBrand>(token, 'company').catch(() => undefined),
   ]);
-  const sales = (pos.sales || []).filter(
-    (row) => (row.seller || '') === name && String(row.at || '').slice(0, 10) === today,
-  );
-  const stays = (office.reservations || []).filter((row) => {
-    const arrival = String(row.check_in).slice(0, 10);
-    const departure = String(row.check_out).slice(0, 10);
-    return arrival === today || departure === today || row.status === 'en_cours';
-  });
-  const lines = [
-    `Réceptionniste : ${name}`,
-    `Journée : ${today}`,
-    '',
-    'Mes ventes',
-    ...(sales.length
-      ? sales.map(
-          (row) =>
-            `FAC-${String(row.id).padStart(5, '0')} · ${row.guest_name || 'Comptant'} · ch. ${row.room_number || '—'} · ${money(row.total)}`,
-        )
-      : ['Aucune vente enregistrée à votre nom aujourd’hui.']),
-    '',
-    'Séjours du jour',
-    ...(stays.length
-      ? stays.map(
-          (row) =>
-            `${row.guest_name} · ch. ${row.room_number}${row.room_type ? ` (${row.room_type})` : ''} · ${String(row.check_in).slice(0, 10)} → ${String(row.check_out).slice(0, 10)} · ${row.status} · ${money(row.total)}`,
-        )
-      : ['Aucun séjour à signaler.']),
+  const mine = day.mine || [];
+  const sales = mine.length ? mine : day.sales || [];
+  const tables: PdfTable[] = [
+    {
+      title: mine.length ? 'Mes ventes' : 'Ventes du jour',
+      columns: ['Facture', 'Client', 'Chambre', 'Montant'],
+      widths: [1.2, 2.2, 1, 1.3],
+      rows: sales.length
+        ? sales.map((row) => [
+            `FAC-${String(row.id).padStart(5, '0')}`,
+            row.guest_name || 'Comptant',
+            row.room_number || '—',
+            money(row.total),
+          ])
+        : [['—', 'Aucune vente', '—', '—']],
+    },
+    {
+      title: 'Séjours du jour',
+      columns: ['Client', 'Chambre', 'Type', 'Arrivée', 'Départ', 'Statut', 'Total'],
+      widths: [2, 0.9, 1.3, 1.15, 1.15, 1.1, 1.3],
+      rows: day.stays?.length
+        ? day.stays.map((row) => [
+            row.guest_name,
+            row.room_number,
+            row.room_type || '—',
+            String(row.check_in).slice(0, 10),
+            String(row.check_out).slice(0, 10),
+            row.status,
+            money(row.total),
+          ])
+        : [['Aucun séjour', '—', '—', '—', '—', '—', '—']],
+    },
   ];
-  await deliverPdf(`rapport-${today}.pdf`, `Rapport journalier — ${name}`, lines, 'download', company);
+  await deliverPdf(
+    `rapport-${day.date}.pdf`,
+    `Rapport journalier — ${name}`,
+    [`Réceptionniste : ${name}`, `Journée : ${day.date}`],
+    'download',
+    company,
+    tables,
+  );
 }
 
 function ClientHome() {
-  const router = useRouter();
-  const [drawer, setDrawer] = useState<Drawer>(null);
-  const [panel, setPanel] = useState<Exclude<Drawer, null>>('profile');
-  const { items, unread, reload, mark, markAll } = useNotifications();
-
   return (
-    <View style={styles.client}>
-      <StatusBar style="dark" />
-      <SafeAreaView edges={['top']} style={{ backgroundColor: Palette.white }}>
-        <AppBar
-          unread={unread}
-          onNotifications={() => {
-            void reload();
-            setPanel('notifications');
-            setDrawer((c) => (c === 'notifications' ? null : 'notifications'));
-          }}
-          onProfile={() => {
-            setPanel('profile');
-            setDrawer((c) => (c === 'profile' ? null : 'profile'));
-          }}
-          notificationsOpen={drawer === 'notifications'}
-          profileOpen={drawer === 'profile'}
-        />
-      </SafeAreaView>
-      <RightDrawer open={drawer !== null} onClose={() => setDrawer(null)}>
-          {panel === 'notifications' ? (
-            <NotificationsPanel
-              items={items}
-              unread={unread}
-              onClose={() => setDrawer(null)}
-              onRead={(id) => void mark(id)}
-              onReadAll={() => void markAll()}
-              onOpen={(href) => {
-                setDrawer(null);
-                if (href) router.push(href as Href);
-              }}
-            />
-          ) : (
-            <ProfilePanel onClose={() => setDrawer(null)} />
-          )}
-        </RightDrawer>
-    </View>
+    <HotelShell title="Accueil">
+      <ClientBoard />
+    </HotelShell>
   );
 }
-
-const styles = StyleSheet.create({
-  client: { flex: 1, backgroundColor: Palette.white },
-});

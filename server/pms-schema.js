@@ -601,6 +601,180 @@ async function ensurePmsSchema(db) {
   await addColumn(db, 'reservations', 'maintenance_id', 'INTEGER');
   await addColumn(db, 'stock_moves', 'unit_cost', 'REAL');
   await addColumn(db, 'stock_moves', 'actor_email', 'TEXT');
+  await addColumn(db, 'stock_moves', 'taken_by', 'TEXT');
+  await addColumn(db, 'stock_moves', 'cancelled_at', 'TEXT');
+  await addColumn(db, 'pos_sales', 'on_account', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumn(db, 'pos_sales', 'settled_at', 'TEXT');
+  await addColumn(db, 'folio_charges', 'sale_id', 'INTEGER');
+  await addColumn(db, 'folio_charges', 'settled_at', 'TEXT');
+  await addColumn(db, 'warehouses', 'active', 'INTEGER NOT NULL DEFAULT 1');
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS product_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1
+    )`,
+  );
+  const knownCategories = await db.all('SELECT name FROM product_categories');
+  const knownNames = new Set(knownCategories.map((row) => String(row.name || '').trim().toLowerCase()));
+  const productCategories = await db.all("SELECT DISTINCT category AS name FROM products WHERE IFNULL(category, '') <> ''");
+  for (const row of productCategories) {
+    const name = String(row.name || '').trim();
+    if (!name || knownNames.has(name.toLowerCase())) continue;
+    await db.run('INSERT INTO product_categories (name, active) VALUES (?, 1)', [name]);
+    knownNames.add(name.toLowerCase());
+  }
+  await addColumn(db, 'menu_items', 'stock', 'INTEGER NOT NULL DEFAULT 20');
+  await addColumn(db, 'menu_items', 'min_stock', 'INTEGER NOT NULL DEFAULT 5');
+  await addColumn(db, 'menu_items', 'of_day', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumn(db, 'menu_items', 'day_date', 'TEXT');
+  await addColumn(db, 'restaurant_orders', 'guest_phone', 'TEXT');
+  await widenColumn(db, 'menu_items', 'photo', 'MEDIUMTEXT');
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS restaurant_goods (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'matiere',
+      unit TEXT NOT NULL DEFAULT 'pièce',
+      stock REAL NOT NULL DEFAULT 0,
+      min_stock REAL NOT NULL DEFAULT 0,
+      cost REAL NOT NULL DEFAULT 0,
+      price REAL NOT NULL DEFAULT 0,
+      photo MEDIUMTEXT,
+      deleted_at TEXT
+    )`,
+  );
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS restaurant_moves (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      good_id INTEGER NOT NULL,
+      good_name TEXT NOT NULL,
+      qty REAL NOT NULL,
+      direction TEXT NOT NULL,
+      taken_by TEXT,
+      note TEXT,
+      at TEXT NOT NULL,
+      actor_email TEXT
+    )`,
+  );
+  const goodsCount = await db.get('SELECT COUNT(*) AS n FROM restaurant_goods');
+  if (!Number(goodsCount && goodsCount.n)) {
+    const seedGoods = [
+      ['Riz', 'matiere', 'kg', 25, 5, 800],
+      ['Huile', 'matiere', 'L', 12, 3, 1500],
+      ['Poulet', 'matiere', 'kg', 18, 4, 2500],
+      ['Hibiscus', 'matiere', 'kg', 6, 1, 2000],
+    ];
+    for (const row of seedGoods) {
+      await db.run('INSERT INTO restaurant_goods (name, kind, unit, stock, min_stock, cost, price) VALUES (?,?,?,?,?,?,0)', row);
+    }
+  }
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS restaurant_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guest_name TEXT NOT NULL,
+      room_number TEXT,
+      reservation_id INTEGER,
+      mode TEXT NOT NULL,
+      pay TEXT NOT NULL,
+      status TEXT NOT NULL,
+      total REAL NOT NULL,
+      at TEXT NOT NULL,
+      user_email TEXT
+    )`,
+  );
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS restaurant_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      qty REAL NOT NULL,
+      price REAL NOT NULL
+    )`,
+  );
+  await db.run("UPDATE menu_items SET category = 'Jus' WHERE name = 'Jus bissap' AND category = 'Boisson'");
+  await db.run("UPDATE menu_items SET category = 'Chaud' WHERE name = 'Café MyHotel' AND category = 'Boisson'");
+  await db.run("UPDATE menu_items SET category = 'Alcool' WHERE name = 'Cocktail Coco Sunset' AND category = 'Boisson'");
+  const catalog = [
+    ['Alloco', 'Entrée', 3000, 'Bananes plantains frites, piment et oignons.'],
+    ['Salade d’attiéké', 'Entrée', 4500, 'Attiéké, tomates, oignons et thon.'],
+    ['Pastels', 'Entrée', 3500, 'Beignets farcis au poisson et au piment.'],
+    ['Brochettes de bœuf', 'Entrée', 5000, 'Bœuf mariné, oignons et piment.'],
+    ['Thiéboudienne', 'Plat', 9000, 'Riz au poisson, légumes et sauce tomate.'],
+    ['Yassa poulet', 'Plat', 8500, 'Poulet citronné, oignons confits et riz.'],
+    ['Mafé', 'Plat', 8000, 'Viande mijotée à la pâte d’arachide.'],
+    ['Kédjénou', 'Plat', 11000, 'Poulet et légumes cuits à l’étouffée.'],
+    ['Garba', 'Plat', 4000, 'Attiéké, thon frit et piment frais.'],
+    ['Placali sauce graine', 'Plat', 7000, 'Pâte de manioc et sauce palmiste.'],
+    ['Poisson braisé', 'Plat', 10000, 'Tilapia braisé, attiéké et crudités.'],
+    ['Sauce gombo', 'Plat', 7500, 'Gombo, viande et riz blanc.'],
+    ['Riz gras', 'Plat', 6500, 'Riz à la tomate, légumes et viande.'],
+    ['Foufou sauce arachide', 'Plat', 7000, 'Igname pilée et sauce arachide.'],
+    ['Dèguè', 'Dessert', 2500, 'Couscous de mil, lait caillé et vanille.'],
+    ['Thiakry', 'Dessert', 2500, 'Mil sucré, lait et muscade.'],
+    ['Beignets de banane', 'Dessert', 2000, 'Bananes mûres dorées et sucre.'],
+    ['Bouillie de mil', 'Petit-déjeuner', 2000, 'Mil, lait et sucre.'],
+    ['Galette d’arachide', 'Petit-déjeuner', 1500, 'Arachides grillées et miel.'],
+    ['Eau minérale', 'Eau', 1000, 'Bouteille 50 cl, servie fraîche.'],
+    ['Eau gazeuse', 'Eau', 1500, 'Bouteille 33 cl.'],
+    ['Jus d’ananas', 'Jus', 2500, 'Ananas pressé, sans sucre ajouté.'],
+    ['Jus de mangue', 'Jus', 2500, 'Mangue mûre mixée et fraîche.'],
+    ['Jus de gingembre', 'Jus', 2000, 'Gingembre, citron et menthe.'],
+    ['Jus de bouye', 'Jus', 2500, 'Pain de singe, lait et vanille.'],
+    ['Orange pressée', 'Jus', 2500, 'Oranges pressées à la minute.'],
+    ['Flag', 'Bière', 2000, 'Bière blonde locale, 65 cl.'],
+    ['Castel', 'Bière', 2000, 'Bière blonde, 65 cl.'],
+    ['Beaufort', 'Bière', 2000, 'Bière blonde, 65 cl.'],
+    ['Guinness', 'Bière', 2500, 'Bière brune, 33 cl.'],
+    ['Heineken', 'Bière', 2500, 'Bière blonde, 33 cl.'],
+    ['Desperados', 'Bière', 3000, 'Bière aromatisée, 33 cl.'],
+    ['Vin de palme', 'Alcool', 2000, 'Servi très frais, verre.'],
+    ['Punch coco', 'Alcool', 5000, 'Coco, rhum et ananas.'],
+    ['Vin rouge', 'Alcool', 6000, 'Verre de la cave.'],
+    ['Vin blanc', 'Alcool', 6000, 'Verre, servi frais.'],
+    ['Thé à la menthe', 'Chaud', 1500, 'Thé vert et menthe fraîche.'],
+    ['Café Touba', 'Chaud', 1500, 'Café épicé, poivre de Guinée.'],
+    ['Chocolat chaud', 'Chaud', 2000, 'Cacao, lait et sucre.'],
+  ];
+  for (const row of catalog) {
+    const existing = await db.get('SELECT id FROM menu_items WHERE name = ?', [row[0]]);
+    if (existing) continue;
+    await db.run(
+      'INSERT INTO menu_items (name, category, price, description, available, of_day, stock, min_stock) VALUES (?,?,?,?,1,0,24,4)',
+      row,
+    );
+  }
+  await db.run(
+    `UPDATE menu_items SET of_day = 1, day_date = DATE_FORMAT(NOW(), '%Y-%m-%d')
+     WHERE IFNULL(of_day, 0) = 0 AND IFNULL(day_date, '') = ''
+       AND name IN (
+         'Poulet braisé attiéké', 'Filet de capitaine', 'Salade d’avocat', 'Jus bissap',
+         'Alloco', 'Thiéboudienne', 'Yassa poulet', 'Mafé', 'Dèguè',
+         'Flag', 'Castel', 'Guinness', 'Jus de gingembre', 'Eau minérale', 'Café Touba'
+       )`,
+  );
+  const sampleOrders = [
+    ['Table terrasse', null, 'salle', 'especes', 'commandee', 35, [['Garba', 1, 4000], ['Castel', 2, 2000], ['Alloco', 1, 3000]]],
+    ['Mariam Touré', '106', 'chambre', 'note', 'preparation', 18, [['Mafé', 1, 8000], ['Dèguè', 1, 2500], ['Eau minérale', 2, 1000]]],
+    ['Kouamé Serge', '301', 'chambre', 'note', 'servie', 50, [['Thiéboudienne', 2, 9000], ['Guinness', 2, 2500]]],
+    ['Salon jardin', null, 'salle', 'especes', 'commandee', 12, [['Yassa poulet', 1, 8500], ['Flag', 2, 2000], ['Jus de gingembre', 1, 2000]]],
+    ['Famille Bamba', '203', 'chambre', 'note', 'commandee', 8, [['Poisson braisé', 1, 10000], ['Heineken', 2, 2500], ['Beignets de banane', 2, 2000]]],
+  ];
+  for (const sample of sampleOrders) {
+    const found = await db.get('SELECT id FROM restaurant_orders WHERE guest_name = ?', [sample[0]]);
+    if (found) continue;
+    const items = sample[6];
+    const total = items.reduce((sum, line) => sum + line[1] * line[2], 0);
+    await db.run(
+      `INSERT INTO restaurant_orders (guest_name, room_number, mode, pay, status, total, at, user_email)
+       VALUES (?,?,?,?,?,?, DATE_FORMAT(DATE_SUB(NOW(), INTERVAL ? MINUTE), '%Y-%m-%d %H:%i'), 'restaurant@gmail.com')`,
+      [sample[0], sample[1], sample[2], sample[3], sample[4], total, sample[5]],
+    );
+    const orderId = await db.lastId();
+    for (const line of items) {
+      await db.run('INSERT INTO restaurant_order_items (order_id, name, qty, price) VALUES (?,?,?,?)', [orderId, line[0], line[1], line[2]]);
+    }
+  }
   await db.run(
     `CREATE TABLE IF NOT EXISTS room_maintenance (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

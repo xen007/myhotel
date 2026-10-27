@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: Palette.ink,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
   },
   subtitle: {
@@ -249,19 +249,19 @@ const styles = StyleSheet.create({
   module: {
     backgroundColor: Palette.white,
     borderRadius: 22,
-    padding: 18,
-    minHeight: 168,
+    padding: 12,
+    minHeight: 112,
     borderWidth: 1,
     borderColor: Palette.gold,
   },
   moduleIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: Palette.gold,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 8,
   },
   moduleCount: {
     color: Palette.gold,

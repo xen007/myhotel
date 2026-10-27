@@ -16,6 +16,7 @@ type Issue = {
   room_number: string;
   reporter: string;
   description: string;
+  category?: string | null;
   status: string;
   at: string;
   resolved_at?: string | null;
@@ -65,8 +66,9 @@ export default function IssuesScreen() {
   }
 
   if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && user && user.role !== 'manager' && user.role !== 'owner' && user.role !== 'housekeeping') {
-    return <Redirect href="/housekeeping" />;
+  const canRead = user?.role === 'manager' || user?.role === 'owner' || user?.role === 'housekeeping' || user?.role === 'receptionist';
+  if (ready && user && !canRead) {
+    return <Redirect href="/home" />;
   }
 
   return (
@@ -99,6 +101,7 @@ export default function IssuesScreen() {
                   <Text style={styles.roomNo}>{item.room_number}</Text>
                 </View>
                 <View style={styles.copy}>
+                  {item.category ? <Text style={styles.category}>{item.category}</Text> : null}
                   <Text style={styles.title} numberOfLines={2}>
                     {item.description}
                   </Text>
@@ -174,6 +177,7 @@ const styles = StyleSheet.create({
   },
   roomNo: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
   copy: { flex: 1, minWidth: 0, gap: 4, paddingRight: 4 },
+  category: { color: Palette.gold, fontWeight: '800', fontSize: 12 },
   title: { color: Palette.ink, fontWeight: '700', fontSize: 15, lineHeight: 20 },
   meta: { color: Palette.ink, opacity: 0.5, fontSize: 12 },
   done: { color: Palette.gold, fontWeight: '700', fontSize: 12 },

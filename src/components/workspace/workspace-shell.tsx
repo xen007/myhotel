@@ -12,7 +12,7 @@ import { RightDrawer } from '@/components/nav/right-drawer';
 import { NotificationsPanel } from '@/components/profile/notifications-panel';
 import { ProfilePanel } from '@/components/profile/profile-panel';
 import { Brand } from '@/constants/config';
-import { isStaffRole, linksFor, ROLE_LABEL } from '@/constants/roles';
+import { CLIENT_LINKS, isStaffRole, linksFor, ROLE_LABEL } from '@/constants/roles';
 import { Breakpoints, Palette } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -29,10 +29,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const [panel, setPanel] = useState<Panel>('profile');
   const [menuOpen, setMenuOpen] = useState(false);
   const { items, unread, reload, mark, markAll } = useNotifications();
-  const links = linksFor(user?.role);
+  const client = user?.role === 'client';
+  const links = client ? CLIENT_LINKS : linksFor(user?.role);
 
   if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && user && !isStaffRole(user.role)) {
+  if (ready && user && !isStaffRole(user.role) && !client) {
     return <Redirect href="/home" />;
   }
 
@@ -136,6 +137,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <View style={styles.body}>{menuOpen ? <View style={styles.mobileMenu}>{sidebar}</View> : right ? drawer : children}</View>
           <BottomTabBar
             links={links}
+            role={user?.role}
             pathname={pathname}
             menuOpen={menuOpen}
             onNavigate={go}

@@ -47,7 +47,6 @@ export function NotificationsPanel({
     <View style={styles.panel}>
       <SafeAreaView edges={embed ? [] : ['top']} style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.kicker}>Centre d’alertes</Text>
           <View style={styles.titleRow}>
             <Text style={styles.title}>Notifications</Text>
             {unread > 0 ? (
@@ -78,7 +77,7 @@ export function NotificationsPanel({
               }}
               style={[styles.card, !item.is_read && styles.cardUnread]}>
               <View style={styles.iconBox}>
-                <AppIcon name={iconFor(item.category)} size={18} color={Palette.ink} />
+                <AppIcon name={iconFor(item.category)} size={14} color={Palette.ink} />
               </View>
               <View style={styles.cardCopy}>
                 <View style={styles.meta}>
@@ -86,8 +85,7 @@ export function NotificationsPanel({
                   <Text style={styles.ago}>{timeAgo(item.created_at)}</Text>
                 </View>
                 <Text style={styles.cardTitle}>{item.title}</Text>
-                <Text style={styles.cardBody}>{item.body}</Text>
-                <Text style={styles.open}>Ouvrir ›</Text>
+                {item.body ? <Text style={styles.cardBody} numberOfLines={2}>{item.body}</Text> : null}
               </View>
               <Pressable
                 onPress={() => {
@@ -124,9 +122,9 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: Palette.gold,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 14,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -137,8 +135,9 @@ const styles = StyleSheet.create({
   kicker: {
     color: Palette.ink,
     fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    lineHeight: 14,
     textTransform: 'uppercase',
   },
   titleRow: {
@@ -149,8 +148,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: Palette.ink,
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: '800',
+    lineHeight: 20,
   },
   count: {
     minWidth: 22,
@@ -170,9 +170,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   body: {
-    padding: 12,
-    gap: 10,
-    paddingBottom: 20,
+    padding: 8,
+    gap: 6,
+    paddingBottom: 12,
   },
   empty: {
     paddingVertical: 60,
@@ -182,23 +182,26 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: Palette.ink,
     fontWeight: '800',
+    fontSize: 14,
+    lineHeight: 18,
   },
   card: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.08)',
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: Palette.white,
   },
   cardUnread: {
     borderColor: Palette.gold,
   },
   iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     backgroundColor: Palette.gold,
     alignItems: 'center',
     justifyContent: 'center',
@@ -215,7 +218,8 @@ const styles = StyleSheet.create({
     color: Palette.gold,
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    letterSpacing: 0.2,
+    lineHeight: 14,
   },
   ago: {
     color: Palette.ink,
@@ -225,15 +229,16 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: Palette.ink,
     fontWeight: '800',
-    fontSize: 15,
-    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 16,
+    marginTop: 1,
   },
   cardBody: {
     color: Palette.ink,
     opacity: 0.7,
-    fontSize: 13,
-    marginTop: 2,
-    lineHeight: 18,
+    fontSize: 12,
+    marginTop: 1,
+    lineHeight: 16,
   },
   open: {
     color: Palette.gold,
@@ -265,8 +270,8 @@ const styles = StyleSheet.create({
   },
   ghost: {
     flex: 1,
-    minHeight: 46,
-    borderRadius: 12,
+    minHeight: 36,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: Palette.ink,
     alignItems: 'center',
@@ -276,11 +281,13 @@ const styles = StyleSheet.create({
   ghostText: {
     color: Palette.ink,
     fontWeight: '800',
+    fontSize: 14,
+    lineHeight: 18,
   },
   gold: {
     flex: 1,
-    minHeight: 46,
-    borderRadius: 12,
+    minHeight: 36,
+    borderRadius: 10,
     backgroundColor: Palette.gold,
     alignItems: 'center',
     justifyContent: 'center',
@@ -290,5 +297,7 @@ const styles = StyleSheet.create({
   goldText: {
     color: Palette.ink,
     fontWeight: '800',
+    fontSize: 14,
+    lineHeight: 18,
   },
 });

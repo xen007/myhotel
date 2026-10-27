@@ -39,7 +39,6 @@ export default function ServicesScreen() {
     <HotelShell
       back
       title="Services de l’hôtel"
-      subtitle="Prestations et extras pour les séjours"
       loading={loading}
       error={error}>
       {services.map((service) => (

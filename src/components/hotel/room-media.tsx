@@ -9,13 +9,15 @@ export function RoomMedia({
   video,
   variant = 'image',
   compact,
+  frame = 'compact',
 }: {
   photo?: string | null;
   video?: string | null;
   variant?: 'image' | 'video';
   compact?: boolean;
+  frame?: 'compact' | 'stage';
 }) {
-  const box = compact ? styles.compactBox : variant === 'video' ? styles.videoBox : styles.imageBox;
+  const box = frame === 'stage' ? styles.stageBox : compact ? styles.compactBox : variant === 'video' ? styles.videoBox : styles.imageBox;
   if (variant === 'video' && video && Platform.OS === 'web') {
     return (
       <View style={box}>
@@ -66,6 +68,13 @@ const styles = StyleSheet.create({
     maxWidth: 640,
     alignSelf: 'center',
     borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#141622',
+  },
+  stageBox: {
+    width: '100%',
+    height: 560,
+    borderRadius: 22,
     overflow: 'hidden',
     backgroundColor: '#141622',
   },

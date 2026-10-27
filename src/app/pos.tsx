@@ -7,6 +7,7 @@ import { AppIcon } from '@/components/box-icon';
 import { FilterBar } from '@/components/hotel/filter-bar';
 import { HotelShell } from '@/components/hotel/hotel-shell';
 import { GoldBtn } from '@/components/hotel/kit';
+import { SaleHistory, type HistorySale } from '@/components/hotel/sale-history';
 import { Breakpoints, Palette, Radius } from '@/constants/theme';
 import { usePms } from '@/hooks/use-pms';
 import { pmsGet, pmsPost, type CompanyProfile } from '@/lib/api';
@@ -25,9 +26,13 @@ type Product = {
 type Sale = SaleInvoice & {
   outlet?: string | null;
   item?: string | null;
+  on_account?: number | null;
+  settled_at?: string | null;
 };
 
-type Payload = { products: Product[]; sales: Sale[] };
+type Inhouse = { reservation_id: number; room_number: string; guest_name: string };
+
+type Payload = { products: Product[]; sales: Sale[]; inhouse?: Inhouse[] };
 
 export default function PosScreen() {
   const { data, error, loading, reload, token, user, ready } = usePms<Payload>('pos');
@@ -38,15 +43,23 @@ export default function PosScreen() {
   const [cart, setCart] = useState<Record<number, number>>({});
   const [guest, setGuest] = useState('');
   const [room, setRoom] = useState('');
+  const [onAccount, setOnAccount] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [company, setCompany] = useState<CompanyProfile | null>(null);
   const [invoice, setInvoice] = useState<SaleInvoice | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [invoicesOpen, setInvoicesOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const products = useMemo(() => data?.products ?? [], [data?.products]);
   const sales = useMemo(() => data?.sales ?? [], [data?.sales]);
+  const inhouse = useMemo(() => data?.inhouse ?? [], [data?.inhouse]);
+  const openNotes = useMemo(
+    () => sales.filter((row) => Number(row.on_account) === 1 && !row.settled_at),
+    [sales],
+  );
   const today = new Date().toISOString().slice(0, 10);
   const isDesktop = width >= Breakpoints.desktop;
   const tableMin = 980;
@@ -84,6 +97,18 @@ export default function PosScreen() {
 
   const cartTotal = lines.reduce((sum, line) => sum + line.qty * Number(line.product.price || 0), 0);
   const cartCount = lines.reduce((sum, line) => sum + line.qty, 0);
+  const historyRows = useMemo<HistorySale[]>(() => sales.map((row) => ({
+    id: row.id,
+    ref: `FAC-${String(row.id).padStart(5, '0')}`,
+    at: row.at,
+    seller: row.seller || 'Réception',
+    total: Number(row.total || 0),
+    pay: Number(row.on_account) === 1 ? 'Sur la note' : 'Espèces',
+    status: Number(row.on_account) === 1 ? (row.settled_at ? 'Réglée' : 'Note ouverte') : 'Encaissée',
+    guest: row.guest_name || 'Comptant',
+    room: row.room_number || '',
+    items: (row.items ?? []).map((item) => ({ name: item.product_name, qty: Number(item.qty || 0), price: Number(item.price || 0) })),
+  })), [sales]);
 
   function add(product: Product) {
     if (Number(product.stock) <= 0) return;
@@ -106,22 +131,42 @@ export default function PosScreen() {
 
   async function checkout() {
     if (!token || saving || !lines.length) return;
+    if (onAccount && !room.trim()) {
+      setFormError('Choisissez la chambre occupée. Le nom du client suit la chambre.');
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
       const sale = await pmsPost<SaleInvoice>(token, 'pos/sale', {
         guest_name: guest.trim(),
         room_number: room.trim(),
+        on_account: onAccount,
         items: lines.map((line) => ({ product_id: line.product.id, qty: line.qty })),
       });
       setCart({});
       setGuest('');
       setRoom('');
+      setOnAccount(false);
       setCartOpen(false);
       setInvoice(sale);
       await reload();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Vente impossible.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function settle(id: number) {
+    if (!token || saving) return;
+    setSaving(true);
+    setFormError(null);
+    try {
+      await pmsPost(token, 'pos/settle', { id });
+      await reload();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Règlement impossible.');
     } finally {
       setSaving(false);
     }
@@ -141,6 +186,7 @@ export default function PosScreen() {
             onPress={() => {
               setCartOpen((open) => !open);
               setInvoicesOpen(false);
+              setNotesOpen(false);
             }}
             style={styles.cartBtn}>
             <AppIcon name="cart" size={20} color={Palette.ink} />
@@ -152,12 +198,36 @@ export default function PosScreen() {
           </Pressable>
           <GoldBtn
             compact
+            icon="time"
+            label="Historique"
+            variant={historyOpen ? 'gold' : 'ghost'}
+            onPress={() => {
+              setHistoryOpen(true);
+              setInvoicesOpen(false);
+              setCartOpen(false);
+              setNotesOpen(false);
+            }}
+          />
+          <GoldBtn
+            compact
             icon="receipt"
             label="Factures"
             variant={invoicesOpen ? 'gold' : 'ghost'}
             onPress={() => {
               setInvoicesOpen((open) => !open);
               setCartOpen(false);
+              setNotesOpen(false);
+            }}
+          />
+          <GoldBtn
+            compact
+            icon="bed"
+            label={openNotes.length ? `Notes ${openNotes.length}` : 'Notes'}
+            variant={notesOpen ? 'gold' : 'ghost'}
+            onPress={() => {
+              setNotesOpen((open) => !open);
+              setCartOpen(false);
+              setInvoicesOpen(false);
             }}
           />
         </View>
@@ -228,15 +298,46 @@ export default function PosScreen() {
                 </View>
               ))}
               {!lines.length ? <Text style={styles.empty}>Sélectionnez un produit pour l’ajouter.</Text> : null}
-              <TextInput value={guest} onChangeText={setGuest} placeholder="Client (facultatif)" style={styles.input} />
-              <TextInput value={room} onChangeText={setRoom} placeholder="Chambre (facultatif)" style={styles.input} />
+              <View style={styles.modeRow}>
+                <Pressable onPress={() => setOnAccount(false)} style={[styles.modeBtn, !onAccount && styles.modeOn]}>
+                  <Text style={styles.modeLabel}>Encaisser</Text>
+                </Pressable>
+                <Pressable onPress={() => setOnAccount(true)} style={[styles.modeBtn, onAccount && styles.modeOn]}>
+                  <Text style={styles.modeLabel}>Sur la note</Text>
+                </Pressable>
+              </View>
+              {onAccount ? (
+                <View style={styles.roomPicks}>
+                  {inhouse.map((stay) => {
+                    const active = String(room) === String(stay.room_number);
+                    return (
+                      <Pressable
+                        key={stay.reservation_id}
+                        onPress={() => {
+                          setRoom(String(stay.room_number));
+                          setGuest(stay.guest_name);
+                        }}
+                        style={[styles.roomPick, active && styles.roomPickOn]}>
+                        <Text style={styles.roomPickNo}>Ch. {stay.room_number}</Text>
+                        <Text style={styles.roomPickName} numberOfLines={1}>{stay.guest_name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                  {!inhouse.length ? <Text style={styles.empty}>Aucun client en séjour pour le moment.</Text> : null}
+                </View>
+              ) : (
+                <>
+                  <TextInput value={guest} onChangeText={setGuest} placeholder="Client (facultatif)" style={styles.input} />
+                  <TextInput value={room} onChangeText={setRoom} placeholder="Chambre (facultatif)" style={styles.input} />
+                </>
+              )}
               {formError ? <Text style={styles.formError}>{formError}</Text> : null}
               <View style={styles.payRow}>
                 <Text style={styles.payTotal}>{money(cartTotal)}</Text>
                 <GoldBtn
                   compact
-                  icon="wallet"
-                  label={saving ? 'Encaissement…' : 'Encaisser'}
+                  icon={onAccount ? 'bed' : 'wallet'}
+                  label={saving ? 'Enregistrement…' : onAccount ? 'Porter sur la note' : 'Encaisser'}
                   onPress={() => void checkout()}
                 />
               </View>
@@ -255,6 +356,31 @@ export default function PosScreen() {
               <GoldBtn compact icon="download" label="Télécharger PDF" variant="ghost" onPress={() => invoice && downloadSaleInvoice(invoice, company ?? {})} />
               <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setInvoice(null)} />
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={notesOpen} transparent animationType="fade" onRequestClose={() => setNotesOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.overlayFill} onPress={() => setNotesOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.section}>Notes à régler au départ</Text>
+              <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setNotesOpen(false)} />
+            </View>
+            <ScrollView style={styles.sheetScroll} contentContainerStyle={styles.sheetBody}>
+              {openNotes.map((row) => (
+                <View key={row.id} style={styles.noteRow}>
+                  <View style={styles.cartCopy}>
+                    <Text style={styles.cartName}>Ch. {row.room_number || '—'} · {row.guest_name || 'Client'}</Text>
+                    <Text style={styles.cartPrice}>{money(row.total)} · {prettyStamp(row.at)}</Text>
+                  </View>
+                  <GoldBtn compact icon="wallet" label="Régler" onPress={() => void settle(row.id)} />
+                </View>
+              ))}
+              {!openNotes.length ? <Text style={styles.empty}>Aucune note ouverte. Les produits portés sur une chambre apparaissent ici jusqu’au règlement.</Text> : null}
+              {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -319,6 +445,7 @@ export default function PosScreen() {
           </View>
         </View>
       </Modal>
+      <SaleHistory visible={historyOpen} rows={historyRows} onClose={() => setHistoryOpen(false)} />
     </HotelShell>
   );
 }
@@ -443,6 +570,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: Palette.ink,
+  },
+  modeRow: { flexDirection: 'row', gap: 8 },
+  modeBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(20,22,34,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Palette.white,
+  },
+  modeOn: { backgroundColor: 'rgba(212,175,55,0.35)', borderColor: Palette.gold },
+  modeLabel: { color: Palette.ink, fontWeight: '800', fontSize: 13 },
+  roomPicks: { gap: 8 },
+  roomPick: {
+    borderWidth: 1,
+    borderColor: 'rgba(20,22,34,0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: Palette.white,
+  },
+  roomPickOn: { borderColor: Palette.gold, backgroundColor: 'rgba(212,175,55,0.18)' },
+  roomPickNo: { color: Palette.ink, fontWeight: '800' },
+  roomPickName: { color: Palette.ink, fontSize: 12, marginTop: 2 },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(20,22,34,0.08)',
   },
   payRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4 },
   payTotal: { color: Palette.ink, fontWeight: '800', fontSize: 22 },

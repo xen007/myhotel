@@ -35,7 +35,7 @@ export default function GuestsScreen() {
   if (ready && !user) return <Redirect href="/welcome" />;
 
   return (
-    <HotelShell back title="Clients" subtitle="Fiches voyageurs" loading={loading} error={error}>
+    <HotelShell back title="Clients" loading={loading} error={error}>
       <View style={styles.list}>
         {guests.map((guest) => (
           <View key={guest.id} style={styles.card}>

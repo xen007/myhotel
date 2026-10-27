@@ -39,7 +39,6 @@ export default function AssetsScreen() {
     <HotelShell
       back
       title="Immobilisations"
-      subtitle="Fiches, amortissement, affectation, maintenance, cession"
       loading={loading}
       error={error}>
       <Chips

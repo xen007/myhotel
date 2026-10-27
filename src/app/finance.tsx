@@ -36,7 +36,6 @@ export default function FinanceScreen() {
     <HotelShell
       back
       title="Finance"
-      subtitle="Caisses, arrhes, règlements, répartition des charges"
       loading={loading}
       error={error}>
       <Chips

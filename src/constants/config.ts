@@ -30,14 +30,22 @@ function resolveDevHost(): string {
   return Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 }
 
+function isLocalHost(host: string) {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
 export function getApiBaseUrl(): string {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl) return envUrl.replace(/\/$/, '');
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host && host !== 'localhost' && host !== '127.0.0.1') {
-      return `${window.location.origin}/api`;
-    }
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') || '';
+  const onWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+  const pageHost = onWeb ? window.location.hostname : '';
+  const pageIsLocal = !pageHost || isLocalHost(pageHost);
+  const envIsLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(envUrl);
+
+  if (onWeb && pageHost && !pageIsLocal) {
+    if (envUrl && !envIsLocal) return envUrl;
+    return `${window.location.origin}/api`;
   }
+
+  if (envUrl) return envUrl;
   return `http://${resolveDevHost()}:${ApiPort}`;
 }

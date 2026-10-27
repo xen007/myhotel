@@ -177,9 +177,17 @@ async function requireUser(
   );
 
   if (!user) {
+    const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+    if (acceptsHtml && !bearer(req)) {
+      res.writeHead(302, { Location: '/login' });
+      res.end();
+      return null;
+    }
     fail(
       res,
-      'Session expirée. Veuillez vous reconnecter.',
+      bearer(req)
+        ? 'Session expirée. Veuillez vous reconnecter.'
+        : 'Connexion requise. Ouvrez la page de connexion.',
       401,
     );
 

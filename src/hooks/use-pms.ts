@@ -24,8 +24,14 @@ export function usePms<T>(path: string) {
   }, [path, token]);
 
   useEffect(() => {
+    if (!ready) return;
+    if (!token) {
+      setLoading(false);
+      setData(null);
+      return;
+    }
     void reload();
-  }, [reload]);
+  }, [ready, reload, token]);
 
   return { data, error, loading, reload, token, user, ready };
 }

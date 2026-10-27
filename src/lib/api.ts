@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from '@/constants/config';
+import { removeItem } from '@/lib/storage';
 
 export type ApiUser = {
   id: number;
@@ -164,6 +165,14 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string |
       throw new Error('Réponse serveur invalide. Vérifiez que l’API MyHotel est démarrée.');
     }
 
+    if (response.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
+      await removeItem('myhotel.auth.token');
+      await removeItem('myhotel.auth.user');
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
+      }
+    }
+
     if (!response.ok || !json.ok) {
       const message = !json.ok ? json.error : 'Une erreur est survenue.';
       throw new Error(message);
@@ -175,8 +184,13 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string |
       if (error.name === 'AbortError') {
         throw new Error('Impossible de joindre le serveur. Lancez l’API : npm run api');
       }
-      if (error.message === 'Network request failed' || error.message.includes('Failed to fetch')) {
-        throw new Error('Impossible de joindre le serveur. Lancez l’API MyHotel (npm run api).');
+      if (
+        error.message === 'Network request failed' ||
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('NetworkError') ||
+        error.message.includes('ERR_CONNECTION_REFUSED')
+      ) {
+        throw new Error('Connexion refusée. L’API ne répond pas. En local, lancez npm run api puis npx expo start.');
       }
       throw error;
     }

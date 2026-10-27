@@ -13,6 +13,12 @@ Mot de passe : `password123`
 | Entretien | `entretien@gmail.com` |
 | Gouvernante | `gouvernante@gmail.com` |
 | Propriétaire | `proprietaire@gmail.com` |
+Restaurant
+Ibrahim Traoré
+`restaurant@gmail.com`
+Client
+Awa Diabaté
+`awa.client@gmail.com`
 
 ## Développement local
 

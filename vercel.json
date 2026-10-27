@@ -5,13 +5,6 @@
   "framework": null,
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/:path*", "destination": "/" }
-  ],
-  "functions": {
-    "api/[[...path]].js": {
-      "includeFiles": "server/**",
-      "maxDuration": 30
-    }
-  }
+    { "source": "/((?!api/).*)", "destination": "/" }
+  ]
 }

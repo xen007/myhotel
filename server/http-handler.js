@@ -11,10 +11,19 @@ function fail(res, error, status = 500) {
   res.end(payload);
 }
 
-module.exports = async function myhotelApi(req, res) {
+async function myhotelApi(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept',
+    });
+    res.end();
+    return;
+  }
   try {
     if (!handler) {
-      const { openDatabase, createRequestHandler } = require('../server/index');
+      const { openDatabase, createRequestHandler } = require('./index');
       const db = await openDatabase();
       handler = createRequestHandler(db);
     }
@@ -22,7 +31,9 @@ module.exports = async function myhotelApi(req, res) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erreur serveur.';
     fail(res, /connect|mysql|access denied|enotfound|etimedout/i.test(message)
-      ? 'Base MySQL inaccessible. Vérifiez MYSQL_URL (ou MYHOTEL_MYSQL_*) sur Vercel.'
+      ? 'Base MySQL inaccessible. Vérifiez MYSQL_URL sur l’hébergement.'
       : message);
   }
-};
+}
+
+module.exports = myhotelApi;

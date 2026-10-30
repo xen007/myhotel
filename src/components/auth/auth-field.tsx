@@ -5,6 +5,7 @@ import {
   TextInput,
   View,
   Platform,
+  useWindowDimensions,
   type KeyboardTypeOptions,
   type TextInputProps,
 } from 'react-native';
@@ -39,11 +40,17 @@ export function AuthField({
   editable = true,
   onSubmitEditing,
 }: AuthFieldProps) {
+  const { height } = useWindowDimensions();
+  const compact = height < 760;
   const [hidden, setHidden] = useState(Boolean(secureTextEntry));
+  const [hover, setHover] = useState(false);
 
   return (
-    <View style={styles.wrap}>
-      <AuthIcon name={icon} />
+    <Pressable
+      onHoverIn={() => setHover(true)}
+      onHoverOut={() => setHover(false)}
+      style={[styles.wrap, compact && styles.wrapCompact, hover && styles.wrapHover]}>
+      <AuthIcon name={icon} size={compact ? 18 : 22} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -55,38 +62,54 @@ export function AuthField({
         autoComplete={autoComplete}
         textContentType={textContentType}
         editable={editable}
-        returnKeyType={secureTextEntry ? 'done' : 'next'}
+        returnKeyType={secureTextEntry || onSubmitEditing ? 'done' : 'next'}
         onSubmitEditing={onSubmitEditing}
         blurOnSubmit={Boolean(onSubmitEditing)}
-        style={[styles.input, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as Record<string, string>) : null]}
+        style={[styles.input, compact && styles.inputCompact, Platform.OS === 'web' ? ({ outlineStyle: 'none' } as Record<string, string>) : null]}
       />
       {secureTextEntry ? (
         <Pressable onPress={() => setHidden((current) => !current)} hitSlop={10}>
-          <AuthIcon name={hidden ? 'eye-off' : 'eye'} />
+          <AuthIcon name={hidden ? 'eye-off' : 'eye'} size={compact ? 18 : 22} />
         </Pressable>
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    minHeight: 52,
+    minHeight: 40,
     width: '100%',
     borderWidth: 1.5,
     borderColor: Palette.ink,
-    borderRadius: 16,
-    paddingHorizontal: 14,
+    borderRadius: 12,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Palette.white,
-    gap: 10,
+    gap: 8,
+  },
+  wrapCompact: {
+    minHeight: 36,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+  },
+  wrapHover: {
+    borderColor: Palette.gold,
+    ...Platform.select({
+      web: { boxShadow: '0 0 0 3px rgba(212,175,55,0.28)' } as object,
+      default: {},
+    }),
   },
   input: {
     flex: 1,
     color: Palette.ink,
     fontSize: 15,
-    paddingVertical: 12,
+    paddingVertical: 10,
     minWidth: 0,
+  },
+  inputCompact: {
+    fontSize: 14,
+    paddingVertical: 8,
   },
 });

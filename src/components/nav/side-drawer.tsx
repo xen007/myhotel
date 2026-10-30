@@ -41,7 +41,7 @@ export function SideDrawer({
   }));
 
   return (
-    <View pointerEvents={open ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, styles.layer]}>
+    <View style={[StyleSheet.absoluteFill, styles.layer, { pointerEvents: open ? 'auto' : 'none' }]}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
         <Animated.View style={[styles.overlay, overlayStyle]} />
       </Pressable>
@@ -61,6 +61,7 @@ export function SideDrawer({
 const styles = StyleSheet.create({
   layer: {
     zIndex: 50,
+    overflow: 'hidden',
   },
   overlay: {
     ...StyleSheet.absoluteFill,

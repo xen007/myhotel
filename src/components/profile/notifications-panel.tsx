@@ -18,11 +18,15 @@ function timeAgo(value: string) {
 
 function iconFor(category: string): BoxIconName {
   const key = category.toUpperCase();
+  if (key.includes('SÉJOUR') || key.includes('SEJOUR')) return 'bed';
   if (key.includes('COMPTE')) return 'user';
   if (key.includes('RÉSA') || key.includes('RESA')) return 'calendar';
   if (key.includes('ÉTAGE') || key.includes('ETAGE')) return 'bed';
   if (key.includes('MAINT')) return 'cog';
   if (key.includes('SIGNAL') || key.includes('URGEN')) return 'error-circle';
+  if (key.includes('COMMANDE') || key.includes('RESTO')) return 'restaurant';
+  if (key.includes('STOCK')) return 'cabinet';
+  if (key.includes('RÉCEPT') || key.includes('RECEPT')) return 'envelope';
   return 'bell';
 }
 

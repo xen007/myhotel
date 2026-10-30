@@ -1274,21 +1274,31 @@ const styles = StyleSheet.create({
     borderColor: Palette.gold,
     borderBottomWidth: 4,
     borderBottomColor: Palette.ink,
-    shadowColor: Palette.ink,
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 8,
+    ...Platform.select({
+      web: { boxShadow: '0 5px 8px rgba(20,22,34,0.18)' },
+      default: {
+        shadowColor: Palette.ink,
+        shadowOpacity: 0.18,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 5 },
+        elevation: 8,
+      },
+    }),
   },
   typeCardHover: {
     transform: [{ translateY: -3 }],
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
+    ...Platform.select({
+      web: { boxShadow: '0 6px 12px rgba(20,22,34,0.28)' },
+      default: { shadowOpacity: 0.28, shadowRadius: 12 },
+    }),
   },
   typeCardPress: {
     transform: [{ translateY: 2 }],
     borderBottomWidth: 2,
-    shadowOpacity: 0.08,
+    ...Platform.select({
+      web: { boxShadow: '0 1px 2px rgba(20,22,34,0.08)' },
+      default: { shadowOpacity: 0.08 },
+    }),
   },
   typeIcon: {
     width: 32,

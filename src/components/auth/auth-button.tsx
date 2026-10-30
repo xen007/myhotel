@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -8,6 +10,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { ShineSweep } from '@/components/motion/shine';
 import { Palette } from '@/constants/theme';
 
 type Variant = 'gold' | 'ink' | 'outline' | 'ghost';
@@ -27,6 +30,7 @@ export function AuthButton({
   style,
   ...rest
 }: AuthButtonProps) {
+  const [hover, setHover] = useState(false);
   const isDisabled = disabled || loading;
   const labelColor = variant === 'gold' || variant === 'outline' || variant === 'ghost' ? Palette.ink : Palette.white;
 
@@ -34,14 +38,18 @@ export function AuthButton({
     <Pressable
       accessibilityRole="button"
       disabled={isDisabled}
+      onHoverIn={() => setHover(true)}
+      onHoverOut={() => setHover(false)}
       style={({ pressed }) => [
         styles.base,
         styles[variant],
+        hover && !isDisabled && !pressed && styles.hover,
         pressed && !isDisabled && styles.pressed,
         isDisabled && styles.disabled,
         style,
       ]}
       {...rest}>
+      <ShineSweep play={!isDisabled && hover} />
       {loading ? (
         <ActivityIndicator color={labelColor} />
       ) : (
@@ -53,12 +61,13 @@ export function AuthButton({
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 46,
+    minHeight: 40,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 22,
+    paddingHorizontal: 18,
     width: '100%',
+    overflow: 'hidden',
   },
   gold: {
     backgroundColor: Palette.gold,
@@ -75,9 +84,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   label: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  hover: {
+    ...Platform.select({
+      web: { boxShadow: '0 0 18px rgba(212,175,55,0.55)', transform: [{ translateY: -1 }] } as object,
+      default: {},
+    }),
   },
   pressed: {
     opacity: 0.86,

@@ -1,13 +1,17 @@
 import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { AuthButton } from '@/components/auth/auth-button';
 import { AuthField } from '@/components/auth/auth-field';
+import { AuthPhone } from '@/components/auth/auth-phone';
 import { AuthShell } from '@/components/auth/auth-shell';
-import { AppIcon } from '@/components/box-icon';
 import { Palette } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
+import { useVisitCart } from '@/context/visit-cart';
+import { submitVisitCart } from '@/lib/visit-checkout';
+import { takeVisitNext } from '@/lib/visit-intent';
+import { detectDialCountry, e164, isValidNational } from '@/lib/phone';
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -15,14 +19,20 @@ function isValidEmail(value: string) {
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { height } = useWindowDimensions();
+  const compact = height < 760;
   const { register, user, ready } = useAuth();
-  const [fullName, setFullName] = useState('');
+  const cart = useVisitCart();
+  const [lastName, setLastName] = useState('');
+  const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
+  const [country, setCountry] = useState(detectDialCountry);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const hint = useMemo(() => `+${country.dial} · ${country.name}`, [country]);
 
   if (ready && user) {
     return <Redirect href="/home" />;
@@ -30,16 +40,24 @@ export default function RegisterScreen() {
 
   async function onSubmit() {
     setError(null);
-    const name = fullName.trim();
+    const nom = lastName.trim();
+    const prenom = firstName.trim();
     const trimmedEmail = email.trim().toLowerCase();
-    const trimmedPhone = phone.trim();
 
-    if (name.length < 2) {
-      setError('Indiquez votre nom complet.');
+    if (nom.length < 2) {
+      setError('Indiquez votre nom.');
+      return;
+    }
+    if (prenom.length < 2) {
+      setError('Indiquez votre prénom.');
       return;
     }
     if (!isValidEmail(trimmedEmail)) {
       setError('Adresse e-mail invalide.');
+      return;
+    }
+    if (!isValidNational(phone, country)) {
+      setError(`Numéro ${country.name} invalide (${hint}).`);
       return;
     }
     if (password.length < 8) {
@@ -53,12 +71,21 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      await register({
-        full_name: name,
+      const payload = await register({
+        full_name: `${prenom} ${nom}`,
         email: trimmedEmail,
-        phone: trimmedPhone || undefined,
+        phone: e164(phone, country),
         password,
       });
+      if (payload.user.role === 'client' && cart.lines.length) {
+        try {
+          await submitVisitCart(payload.token, cart.lines);
+          cart.clear();
+        } catch {
+          /* le panier reste disponible */
+        }
+      }
+      await takeVisitNext();
       router.replace('/home');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Inscription impossible.');
@@ -69,27 +96,39 @@ export default function RegisterScreen() {
 
   return (
     <AuthShell>
-      <View style={styles.hero}>
-        <AppIcon name="user" size={34} color={Palette.ink} />
-      </View>
-      <Text style={styles.title}>Inscription</Text>
-
+      <Text style={[styles.title, compact && styles.titleSm]}>Inscription</Text>
       {error ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
 
-      <AuthField
-        icon="person"
-        placeholder="Nom complet"
-        value={fullName}
-        onChangeText={setFullName}
-        autoCapitalize="words"
-        autoComplete="name"
-        textContentType="name"
-        editable={!loading}
-      />
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Nom</Text>
+        <AuthField
+          icon="person"
+          placeholder="Nom"
+          value={lastName}
+          onChangeText={setLastName}
+          autoCapitalize="words"
+          autoComplete="family-name"
+          textContentType="familyName"
+          editable={!loading}
+        />
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Prénom</Text>
+        <AuthField
+          icon="person"
+          placeholder="Prénom"
+          value={firstName}
+          onChangeText={setFirstName}
+          autoCapitalize="words"
+          autoComplete="given-name"
+          textContentType="givenName"
+          editable={!loading}
+        />
+      </View>
       <AuthField
         icon="mail"
         placeholder="Adresse e-mail"
@@ -100,16 +139,7 @@ export default function RegisterScreen() {
         textContentType="emailAddress"
         editable={!loading}
       />
-      <AuthField
-        icon="phone"
-        placeholder="Téléphone (optionnel)"
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-        autoComplete="tel"
-        textContentType="telephoneNumber"
-        editable={!loading}
-      />
+      <AuthPhone country={country} onCountry={setCountry} value={phone} onChangeText={setPhone} editable={!loading} />
       <AuthField
         icon="lock"
         placeholder="Mot de passe"
@@ -129,6 +159,7 @@ export default function RegisterScreen() {
         autoComplete="password-new"
         textContentType="newPassword"
         editable={!loading}
+        onSubmitEditing={() => void onSubmit()}
       />
 
       <AuthButton label="Créer mon compte" loading={loading} onPress={onSubmit} />
@@ -144,47 +175,58 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  hero: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Palette.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-  },
   title: {
     color: Palette.ink,
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: '800',
     textAlign: 'center',
     alignSelf: 'center',
+  },
+  titleSm: {
+    fontSize: 18,
+  },
+  card: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: 'rgba(212,175,55,0.55)',
+    borderRadius: 12,
+    padding: 6,
+    backgroundColor: Palette.white,
+    gap: 4,
+  },
+  cardLabel: {
+    color: Palette.ink,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    paddingHorizontal: 4,
   },
   errorBox: {
     borderWidth: 1,
     borderColor: Palette.ink,
     borderRadius: 10,
-    padding: 10,
+    padding: 6,
     backgroundColor: Palette.white,
   },
   errorText: {
     color: Palette.ink,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
+    textAlign: 'center',
   },
   switchRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    marginTop: 8,
   },
   switchText: {
     color: Palette.ink,
-    fontSize: 14,
+    fontSize: 12,
   },
   switchLink: {
     color: Palette.gold,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
   },
 });

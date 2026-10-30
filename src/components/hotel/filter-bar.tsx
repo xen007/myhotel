@@ -47,7 +47,6 @@ export function FilterBar({
   status,
   onStatus,
   statuses,
-  stackSearch = false,
 }: {
   query: string;
   onQuery: (value: string) => void;
@@ -60,42 +59,15 @@ export function FilterBar({
   statuses?: FilterOption[];
   stackSearch?: boolean;
 }) {
-  const { width } = useWindowDimensions();
-  const stacked = stackSearch && width < Breakpoints.tablet;
-  const selects = (
-    <>
-      {categories && onCategory && category !== undefined ? (
-        <FilterSelect fill={stacked} value={category} onChange={onCategory} options={categories} />
-      ) : null}
-      {statuses && onStatus && status !== undefined ? (
-        <FilterSelect fill={stacked} value={status} onChange={onStatus} options={statuses} />
-      ) : null}
-    </>
-  );
-
-  if (stacked) {
-    return (
-      <View style={[styles.bar, styles.barStacked]}>
-        <TextInput
-          placeholder={queryPlaceholder}
-          value={query}
-          onChangeText={onQuery}
-          style={[styles.search, styles.searchFill]}
-        />
-        <View style={styles.tools}>
-          {selects}
-          <View style={styles.filterBtn}>
-            <GoldBtn compact icon="search" label="Filtrer" onPress={() => undefined} />
-          </View>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.bar}>
       <TextInput placeholder={queryPlaceholder} value={query} onChangeText={onQuery} style={styles.search} />
-      {selects}
+      {categories && onCategory && category !== undefined ? (
+        <FilterSelect value={category} onChange={onCategory} options={categories} />
+      ) : null}
+      {statuses && onStatus && status !== undefined ? (
+        <FilterSelect value={status} onChange={onStatus} options={statuses} />
+      ) : null}
       <View style={styles.filterBtn}>
         <GoldBtn compact icon="search" label="Filtrer" onPress={() => undefined} />
       </View>
@@ -128,6 +100,7 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     flexWrap: 'nowrap',
+    flexShrink: 0,
     alignItems: 'center',
     gap: 8,
     backgroundColor: Palette.white,
@@ -136,14 +109,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.06)',
     width: '100%',
-  },
-  barStacked: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
+    ...Platform.select({ web: { overflowX: 'auto' as const }, default: {} }),
   },
   search: {
-    flex: 1,
-    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 0,
+    minWidth: 148,
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.12)',
     borderRadius: 12,

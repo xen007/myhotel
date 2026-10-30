@@ -165,7 +165,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string |
       throw new Error('Réponse serveur invalide. Vérifiez que l’API MyHotel est démarrée.');
     }
 
-    if (response.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
+    if (response.status === 401 && token && path !== '/auth/login' && path !== '/auth/register') {
       await removeItem('myhotel.auth.token');
       await removeItem('myhotel.auth.user');
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
@@ -336,6 +336,14 @@ export type CompanyProfile = {
 
 export function pmsGet<T>(token: string, path: string) {
   return request<T>(`/pms/${path}`, { method: 'GET' }, token);
+}
+
+export function visitGet<T>(path: string) {
+  return request<T>(`/pms/${path}`, { method: 'GET' }, null, 30000);
+}
+
+export function visitPost<T>(path: string, body: Record<string, unknown> = {}) {
+  return request<T>(`/pms/${path}`, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function pmsPost<T>(token: string, path: string, body: Record<string, unknown> = {}, timeoutMs = 15000) {

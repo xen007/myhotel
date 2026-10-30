@@ -37,6 +37,7 @@ type RestoOrder = {
   id: number;
   guest_name?: string | null;
   room_number?: string | null;
+  table_number?: string | null;
   pay?: string | null;
   status?: string | null;
   total?: number;
@@ -46,7 +47,15 @@ type RestoOrder = {
   items?: { name: string; qty: number; price?: number }[];
 };
 
-type Payload = { items: Dish[]; payers?: Payer[]; orders?: RestoOrder[] };
+type Occupant = {
+  reservation_id: number;
+  room_number: string;
+  guest_name: string;
+  guest_phone?: string | null;
+  guest_email?: string | null;
+};
+
+type Payload = { items: Dish[]; payers?: Payer[]; occupants?: Occupant[]; orders?: RestoOrder[]; categories?: { id: number; name: string; kind: string; active?: number }[] };
 
 const ORDER_STATUS: Record<string, string> = {
   commandee: 'Reçue',
@@ -55,9 +64,6 @@ const ORDER_STATUS: Record<string, string> = {
   reglee: 'Réglée',
 };
 
-const FOOD = ['Entrée', 'Plat', 'Dessert', 'Petit-déjeuner'];
-const DRINKS = ['Eau', 'Jus', 'Bière', 'Alcool', 'Chaud', 'Boisson'];
-const CATEGORY_ORDER = [...FOOD, ...DRINKS];
 
 export default function ServiceScreen() {
   const { data, error, loading, reload, token, user, ready } = usePms<Payload>('restaurant');
@@ -71,6 +77,7 @@ export default function ServiceScreen() {
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
   const [guestRoom, setGuestRoom] = useState('');
+  const [tableNumber, setTableNumber] = useState('');
   const [stayId, setStayId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -78,11 +85,20 @@ export default function ServiceScreen() {
   const allowed = user?.role === 'restaurant' || user?.role === 'manager' || user?.role === 'owner';
   const dishes = useMemo(() => (data?.items ?? []).filter((row) => Number(row.available ?? 1) === 1), [data?.items]);
   const payers = data?.payers ?? [];
+  const occupants = data?.occupants ?? [];
+  const occupant = useMemo(
+    () => occupants.find((row) => String(row.room_number || '').trim() === guestRoom.trim()),
+    [occupants, guestRoom],
+  );
   const shownPayers = useMemo(() => {
     const needle = clientQuery.trim().toLowerCase();
     if (!needle) return payers;
     return payers.filter((row) => `${row.full_name} ${row.email} ${row.phone || ''} ${row.room_number || ''}`.toLowerCase().includes(needle));
   }, [payers, clientQuery]);
+  const drinkCats = useMemo(
+    () => new Set((data?.categories ?? []).filter((item) => item.kind === 'drink').map((item) => item.name.trim().toLowerCase())),
+    [data?.categories],
+  );
   const cols = width >= Breakpoints.desktop ? 3 : width >= Breakpoints.tablet ? 2 : 1;
 
   const visible = useMemo(() => {
@@ -100,16 +116,19 @@ export default function ServiceScreen() {
       list.push(dish);
       map.set(dish.category, list);
     });
+    const order = (data?.categories ?? []).filter((item) => Number(item.active ?? 1) === 1).map((item) => item.name);
     return [...map.entries()].sort((a, b) => {
-      const left = CATEGORY_ORDER.indexOf(a[0]);
-      const right = CATEGORY_ORDER.indexOf(b[0]);
+      const left = order.indexOf(a[0]);
+      const right = order.indexOf(b[0]);
       return (left < 0 ? 99 : left) - (right < 0 ? 99 : right);
     });
-  }, [visible]);
+  }, [visible, data?.categories]);
   const categories = useMemo(() => {
     const present = new Set(dishes.map((row) => row.category));
-    return [{ id: 'all', label: 'Toutes les catégories' }, ...CATEGORY_ORDER.filter((item) => present.has(item)).map((item) => ({ id: item, label: item }))];
-  }, [dishes]);
+    const named = (data?.categories ?? []).filter((item) => Number(item.active ?? 1) === 1 && present.has(item.name)).map((item) => item.name);
+    const extras = [...present].filter((name) => !named.includes(name));
+    return [{ id: 'all', label: 'Catégorie' }, ...named.concat(extras).map((item) => ({ id: item, label: item }))];
+  }, [dishes, data?.categories]);
 
   const lines = dishes.filter((dish) => (cart[dish.id] || 0) > 0).map((dish) => ({ dish, qty: cart[dish.id] }));
   const cartTotal = lines.reduce((sum, line) => sum + line.qty * Number(line.dish.price || 0), 0);
@@ -124,6 +143,7 @@ export default function ServiceScreen() {
     status: ORDER_STATUS[row.status || ''] || row.status || 'Reçue',
     guest: row.guest_name || '',
     room: row.room_number || '',
+    table: row.table_number || '',
     items: (row.items ?? []).map((item) => ({ name: item.name, qty: Number(item.qty || 0), price: Number(item.price || 0) })),
   })), [data?.orders]);
   if (ready && !user) return <Redirect href="/welcome" />;
@@ -135,17 +155,39 @@ export default function ServiceScreen() {
     setCart({ ...cart, [dish.id]: next });
   }
 
+  function applyRoom(value: string) {
+    setGuestRoom(value);
+    const needle = value.trim();
+    const stay = occupants.find((row) => String(row.room_number || '').trim() === needle)
+      || payers.find((row) => String(row.room_number || '').trim() === needle && row.stay_status === 'en_cours')
+      || payers.find((row) => String(row.room_number || '').trim() === needle);
+    if (!needle || !stay) {
+      if (!needle) setStayId(null);
+      return;
+    }
+    if ('guest_name' in stay) {
+      setStayId(stay.reservation_id);
+      setGuestName(stay.guest_name);
+      setGuestPhone(stay.guest_phone || '');
+      return;
+    }
+    setStayId(stay.reservation_id || null);
+    setGuestName(stay.full_name);
+    setGuestPhone(stay.phone || '');
+  }
+
   async function sell() {
     if (!token || saving || !lines.length) return;
     const name = guestName.trim();
     const room = guestRoom.trim();
     const payer = payers.find((row) => room && String(row.room_number) === room);
+    const reservationId = occupant?.reservation_id || payer?.reservation_id || stayId;
     if (name.length < 2) {
       setFormError('Indiquez le nom du client.');
       return;
     }
-    if (onAccount && !payer?.reservation_id) {
-      setFormError('Ce client n’a pas de chambre. Le montant ne peut pas être noté.');
+    if (onAccount && !reservationId) {
+      setFormError('Cette chambre n’a pas d’occupant actuel. Le montant ne peut pas être noté.');
       return;
     }
     setSaving(true);
@@ -153,8 +195,9 @@ export default function ServiceScreen() {
     try {
       await pmsPost(token, 'restaurant/sale', {
         mode: onAccount ? 'chambre' : 'salle',
-        reservation_id: onAccount ? payer?.reservation_id : undefined,
-        room_number: onAccount ? payer?.room_number : room,
+        reservation_id: onAccount ? reservationId : undefined,
+        room_number: room || undefined,
+        table_number: tableNumber.trim() || undefined,
         guest_name: name,
         guest_phone: guestPhone.trim(),
         items: lines.map((line) => ({ id: line.dish.id, qty: line.qty })),
@@ -165,6 +208,7 @@ export default function ServiceScreen() {
       setGuestName('');
       setGuestPhone('');
       setGuestRoom('');
+      setTableNumber('');
       await reload();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Vente impossible.');
@@ -192,7 +236,7 @@ export default function ServiceScreen() {
             {list.map((dish) => {
               const inCart = cart[dish.id] || 0;
               const empty = Number(dish.stock ?? 0) <= 0;
-              const drink = DRINKS.includes(dish.category);
+              const drink = drinkCats.has(String(dish.category || '').trim().toLowerCase());
               return (
                 <Pressable key={dish.id} disabled={empty} onPress={() => add(dish)} style={[styles.card, { width: cols === 1 ? '100%' : cols === 2 ? '48%' : '31%' }, empty && styles.off, inCart ? styles.on : null]}>
                   {dish.photo ? <Image source={{ uri: dish.photo }} style={styles.photo} contentFit="cover" /> : <View style={styles.photoEmpty}><AppIcon name={drink ? 'coffee' : 'restaurant'} size={22} color={Palette.gold} /></View>}
@@ -239,7 +283,16 @@ export default function ServiceScreen() {
               </View>
               <TextInput value={guestName} onChangeText={setGuestName} placeholder="Nom du client" placeholderTextColor="rgba(20,22,34,0.45)" style={styles.input} />
               <TextInput value={guestPhone} onChangeText={setGuestPhone} placeholder="Téléphone" placeholderTextColor="rgba(20,22,34,0.45)" keyboardType="phone-pad" style={styles.input} />
-              <TextInput value={guestRoom} onChangeText={setGuestRoom} placeholder="Chambre, si le client séjourne" placeholderTextColor="rgba(20,22,34,0.45)" style={styles.input} />
+              <TextInput value={guestRoom} onChangeText={applyRoom} placeholder="Numéro de chambre" placeholderTextColor="rgba(20,22,34,0.45)" style={styles.input} />
+              {occupant ? (
+                <View style={styles.occupant}>
+                  <Text style={styles.name}>Occupant actuel · Ch. {occupant.room_number}</Text>
+                  <Text style={styles.meta}>{occupant.guest_name}{occupant.guest_phone ? ` · ${occupant.guest_phone}` : ''}</Text>
+                </View>
+              ) : guestRoom.trim() ? (
+                <Text style={styles.empty}>Aucun occupant actuel pour cette chambre.</Text>
+              ) : null}
+              <TextInput value={tableNumber} onChangeText={setTableNumber} placeholder="Numéro de table (sur place)" placeholderTextColor="rgba(20,22,34,0.45)" style={styles.input} />
               {onAccount ? (
                 <View style={styles.clientBox}>
                   <TextInput value={clientQuery} onChangeText={setClientQuery} placeholder="Rechercher un client..." placeholderTextColor="rgba(20,22,34,0.45)" style={styles.input} />
@@ -322,5 +375,6 @@ const styles = StyleSheet.create({
   pickOn: { borderColor: Palette.gold, backgroundColor: 'rgba(212,175,55,0.18)' },
   total: { color: Palette.ink, fontWeight: '800', fontSize: 18 },
   err: { color: Palette.ink, fontWeight: '700', backgroundColor: 'rgba(212,175,55,0.2)', padding: 8, borderRadius: 10 },
+  occupant: { gap: 2, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: Palette.gold, backgroundColor: 'rgba(212,175,55,0.16)' },
   ticket: { gap: 8, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: Palette.gold },
 });

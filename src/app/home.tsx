@@ -3,7 +3,7 @@ import { isStaffRole } from '@/constants/roles';
 import { useAuth } from '@/context/auth-context';
 import { HotelShell } from '@/components/hotel/hotel-shell';
 import { GoldBtn } from '@/components/hotel/kit';
-import { ClientBoard } from '@/components/hotel/client-space';
+import { ClientSpace } from '@/components/hotel/client-space';
 import { RoleDashboard, type DashPayload } from '@/components/hotel/role-dashboard';
 import { pmsGet } from '@/lib/api';
 import { money } from '@/lib/format';
@@ -116,8 +116,8 @@ async function downloadReceptionDay(token: string, name: string) {
 
 function ClientHome() {
   return (
-    <HotelShell title="Accueil">
-      <ClientBoard />
+    <HotelShell title="Accueil" fill>
+      <ClientSpace view="rooms" />
     </HotelShell>
   );
 }

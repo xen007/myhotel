@@ -4,13 +4,48 @@ const crypto = require('crypto');
 const { day } = require('./pms-seed');
 const { DATA_DIR } = require('./db');
 const { writeAudit, actorIdentity } = require('./audit');
+const { pushNotice, notifyMenuLow, notifyGoodLow } = require('./notify');
 const { buildBrandedPdf } = require('./pdf-brand');
 
 const CHAT_DIR = path.join(DATA_DIR, 'chat');
 const MAX_CHAT_FILE = 12 * 1024 * 1024;
+let visitSnapshot = { at: 0, payload: null };
 
 function num(v) {
   return Number(v || 0);
+}
+
+function phoneDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+async function linkGuestToUser(db, { email, phone, fullName }) {
+  const guests = await db.all('SELECT id, email, phone, full_name FROM guests');
+  let mail = String(email || '').trim().toLowerCase();
+  const name = String(fullName || '').trim().toLowerCase();
+  const digits = phoneDigits(phone);
+  if (!mail) {
+    const users = await db.all("SELECT email, phone, full_name FROM users WHERE role = 'client'");
+    const hit = users.find((row) => {
+      if (name && String(row.full_name || '').trim().toLowerCase() === name) return true;
+      const userDigits = phoneDigits(row.phone);
+      return digits.length >= 8 && userDigits.length >= 8 && (userDigits.endsWith(digits.slice(-8)) || digits.endsWith(userDigits.slice(-8)));
+    });
+    if (hit) mail = String(hit.email || '').trim().toLowerCase();
+  }
+  for (const guest of guests) {
+    const sameMail = mail && String(guest.email || '').trim().toLowerCase() === mail;
+    const sameName = name && String(guest.full_name || '').trim().toLowerCase() === name;
+    const guestDigits = phoneDigits(guest.phone);
+    const samePhone = digits.length >= 8 && guestDigits.length >= 8 && (guestDigits.endsWith(digits.slice(-8)) || digits.endsWith(guestDigits.slice(-8)));
+    if (!sameMail && !sameName && !samePhone) continue;
+    if (mail && String(guest.email || '').trim() !== mail) {
+      await db.run('UPDATE guests SET email = ? WHERE id = ?', [mail, guest.id]);
+    }
+    if (phone && !String(guest.phone || '').trim()) {
+      await db.run('UPDATE guests SET phone = ? WHERE id = ?', [phone, guest.id]);
+    }
+  }
 }
 
 function chatPreview(row) {
@@ -243,6 +278,26 @@ async function restaurantPayers(db) {
   });
 }
 
+async function syncMenuItemCategories(db, items) {
+  let cats = [];
+  try {
+    cats = await db.all('SELECT name, kind FROM menu_categories');
+  } catch {
+    return;
+  }
+  const names = new Set(cats.map((row) => String(row.name || '').trim().toLowerCase()));
+  const drinkHints = new Set(['eau', 'jus', 'bière', 'biere', 'alcool', 'chaud', 'boisson']);
+  for (const item of items) {
+    const name = String(item.category || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (names.has(key)) continue;
+    const kind = drinkHints.has(key) ? 'drink' : 'food';
+    await db.run('INSERT INTO menu_categories (name, kind, active) VALUES (?, ?, 1)', [name, kind]);
+    names.add(key);
+  }
+}
+
 async function restaurantDash(db, today) {
   try {
     const open = await db.get("SELECT COUNT(*) AS n FROM restaurant_orders WHERE status != 'reglee'");
@@ -250,8 +305,16 @@ async function restaurantDash(db, today) {
     const dishes = await db.get('SELECT COUNT(*) AS n FROM menu_items WHERE IFNULL(available, 1) = 1');
     const low = await db.get('SELECT COUNT(*) AS n FROM menu_items WHERE IFNULL(stock, 0) <= IFNULL(min_stock, 0)');
     const daily = await db.get('SELECT COUNT(*) AS n FROM menu_items WHERE IFNULL(of_day, 0) = 1 AND day_date = ?', [today]);
-    const drinks = await db.get("SELECT COUNT(*) AS n FROM menu_items WHERE LOWER(category) IN ('eau','jus','bière','biere','alcool','chaud','boisson') AND IFNULL(available, 1) = 1");
-    const food = await db.get("SELECT COUNT(*) AS n FROM menu_items WHERE LOWER(category) NOT IN ('eau','jus','bière','biere','alcool','chaud','boisson') AND IFNULL(available, 1) = 1");
+    let drinkCats = [];
+    try {
+      drinkCats = await db.all("SELECT name FROM menu_categories WHERE kind = 'drink'");
+    } catch {
+      drinkCats = [];
+    }
+    const drinkNames = new Set((drinkCats.length ? drinkCats.map((row) => String(row.name || '').trim().toLowerCase()) : ['eau', 'jus', 'bière', 'biere', 'alcool', 'chaud', 'boisson']));
+    const catalog = await db.all('SELECT category FROM menu_items WHERE IFNULL(available, 1) = 1');
+    const drinks = { n: catalog.filter((row) => drinkNames.has(String(row.category || '').trim().toLowerCase())).length };
+    const food = { n: catalog.length - Number(drinks.n) };
     let goodsLow = { n: 0 };
     try {
       goodsLow = await db.get('SELECT COUNT(*) AS n FROM restaurant_goods WHERE IFNULL(deleted_at, \'\') = \'\' AND stock <= min_stock');
@@ -641,11 +704,13 @@ async function queueDepartureCleaning(db, roomNumber, guestName, endStamp) {
     );
   }
   await db.run("UPDATE rooms SET status = 'nettoyage' WHERE number = ? AND status != 'maintenance'", [roomNumber]);
-  await db.run(
-    `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-     VALUES ('ÉTAGES', 'Chambre à nettoyer', ?, '/housekeeping', 0, ?)`,
-    [`Chambre ${roomNumber} libérée (${endStamp}) — passage entretien.`, stampNow()],
-  );
+  await pushNotice(db, {
+    category: 'ÉTAGES',
+    title: 'Chambre à nettoyer',
+    body: `Chambre ${roomNumber} libérée (${endStamp}) — passage entretien.`,
+    href: '/housekeeping',
+    roles: ['housekeeping'],
+  });
 }
 
 async function releaseExpiredStays(db) {
@@ -817,6 +882,167 @@ async function computeKpis(db) {
 async function handlePms(req, res, ctx) {
   const { db, pathName, method, readBody, ok, fail, requireUser } = ctx;
   if (!pathName.startsWith('/pms')) return false;
+
+  if (pathName.startsWith('/pms/visit')) {
+    if (method === 'GET' && pathName === '/pms/visit') {
+      if (visitSnapshot.payload && Date.now() - visitSnapshot.at < 20000) {
+        ok(res, visitSnapshot.payload);
+        return true;
+      }
+      const today = day(0);
+      void releaseDailyMenu(db, today).catch(() => {});
+      const empty = [];
+      const [roomsRaw, liveStays, menuCats, company, services, products, reviews, menu] = await Promise.all([
+        db.all(
+          "SELECT id, number, type, floor, status, price_night, capacity, photo, video, description, maintenance_level FROM rooms WHERE IFNULL(deleted_at, '') = '' ORDER BY CAST(number AS UNSIGNED), number",
+        ),
+        db.all("SELECT room_id, check_out, check_out_time FROM reservations WHERE status IN ('en_cours','confirmee')").catch(() => empty),
+        db.all('SELECT id, name, kind, active FROM menu_categories WHERE IFNULL(active, 1) = 1 ORDER BY kind, name').catch(() => empty),
+        db.get(
+          'SELECT name, legal_name, slogan, address, city, country, phone, email, website, nif, rccm FROM company_profile WHERE id = 1',
+        ).catch(() => null),
+        db.all('SELECT id, name, description, price, icon FROM services ORDER BY name').catch(() => empty),
+        db.all(
+          "SELECT id, name, category, unit, price, stock, photo FROM products WHERE price > 0 AND IFNULL(deleted_at, '') = '' ORDER BY category, name",
+        ).catch(() => empty),
+        db.all(
+          'SELECT id, guest_name, rating, comment, at FROM guest_reviews WHERE IFNULL(published, 1) = 1 ORDER BY id DESC LIMIT 12',
+        ).catch(() => empty),
+        db.all(
+          'SELECT id, name, category, price, description, photo FROM menu_items WHERE IFNULL(available, 1) = 1 ORDER BY category, name',
+        ).catch(() => empty),
+      ]);
+      const nextByRoom = new Map();
+      for (const row of liveStays || []) {
+        const key = Number(row.room_id);
+        const end = String(row.check_out || '').slice(0, 10);
+        const prev = nextByRoom.get(key);
+        if (!prev || end > prev.date) nextByRoom.set(key, { date: end, time: row.check_out_time || '12:00' });
+      }
+      const payload = {
+        company: company || null,
+        services: services || [],
+        products: products || [],
+        reviews: reviews || [],
+        categories: menuCats || [],
+        rooms: (roomsRaw || []).map((room) => {
+          const occ = nextByRoom.get(Number(room.id));
+          return {
+            id: room.id,
+            number: room.number,
+            type: room.type,
+            floor: room.floor,
+            status: room.status,
+            price_night: room.price_night,
+            capacity: room.capacity,
+            photo: room.photo,
+            video: room.video || null,
+            description: room.description,
+            next_free_date: occ ? occ.date : today,
+            next_free_time: occ ? occ.time : '14:00',
+            bookable: room.status !== 'hors_service' && !(room.status === 'maintenance' && room.maintenance_level !== 'legere'),
+          };
+        }),
+        menu: menu || [],
+        stays: [],
+        here: null,
+        orders: [],
+        charges: [],
+      };
+      visitSnapshot = { at: Date.now(), payload };
+      ok(res, payload);
+      return true;
+    }
+    if (method === 'GET' && pathName === '/pms/visit/room') {
+      const id = Number(new URL(req.url || '', 'http://localhost').searchParams.get('id') || 0);
+      const room = await db.get(
+        "SELECT id, number, type, floor, status, price_night, capacity, photo, video, description, maintenance_level FROM rooms WHERE id = ? AND IFNULL(deleted_at, '') = ''",
+        [id],
+      );
+      if (!room) {
+        fail(res, 'Chambre introuvable.', 404);
+        return true;
+      }
+      const equipment = await db.all(
+        `SELECT e.id, e.name, e.category, e.icon
+         FROM room_equipment re JOIN equipment e ON e.id = re.equipment_id
+         WHERE re.room_id = ? ORDER BY e.category, e.name`,
+        [id],
+      );
+      const photos = (await db.all('SELECT url FROM room_photos WHERE room_id = ? ORDER BY sort, id', [id])).map((row) => row.url);
+      let videos = [];
+      try {
+        videos = (await db.all('SELECT url FROM room_videos WHERE room_id = ? ORDER BY sort, id', [id])).map((row) => row.url);
+      } catch {
+        videos = [];
+      }
+      if (room.photo && !photos.includes(room.photo)) photos.unshift(room.photo);
+      if (room.video && !videos.includes(room.video)) videos.unshift(room.video);
+      ok(res, {
+        id: room.id,
+        number: room.number,
+        type: room.type,
+        floor: room.floor,
+        status: room.status,
+        price_night: room.price_night,
+        capacity: room.capacity,
+        photo: room.photo,
+        description: room.description,
+        photos,
+        videos,
+        video: room.video || null,
+        equipment,
+        bookable: room.status !== 'hors_service' && !(room.status === 'maintenance' && room.maintenance_level !== 'legere'),
+      });
+      return true;
+    }
+    if (method === 'POST' && pathName === '/pms/visit/contact') {
+      const body = await readBody(req);
+      const name = String(body.name || '').trim();
+      const email = String(body.email || '').trim().toLowerCase();
+      const phone = String(body.phone || '').trim();
+      const subject = String(body.subject || '').trim();
+      const message = String(body.message || body.body || '').trim();
+      if (name.length < 2) {
+        fail(res, 'Indiquez votre nom.');
+        return true;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        fail(res, 'Adresse e-mail invalide.');
+        return true;
+      }
+      if (subject.length < 2) {
+        fail(res, 'Indiquez l’objet du message.');
+        return true;
+      }
+      if (message.length < 8) {
+        fail(res, 'Écrivez un message plus précis.');
+        return true;
+      }
+      const at = stampNow();
+      try {
+        await db.run(
+          'INSERT INTO visit_messages (name, email, phone, subject, body, at) VALUES (?,?,?,?,?,?)',
+          [name, email, phone || null, subject.slice(0, 140), message.slice(0, 2000), at],
+        );
+      } catch {
+        fail(res, 'Impossible d’enregistrer le message pour le moment.');
+        return true;
+      }
+      await pushNotice(db, {
+        category: 'RÉCEPTION',
+        title: 'Message visiteur',
+        body: `${name} · ${subject.slice(0, 80)}`,
+        href: '/messages',
+        roles: ['receptionist', 'manager', 'owner'],
+      });
+      ok(res, { sent: true }, 'Votre message a bien été transmis à la réception.', 201);
+      return true;
+    }
+    fail(res, 'Page introuvable.', 404);
+    return true;
+  }
+
   const actor = await requireUser(db, req, res);
   if (!actor) return true;
   try {
@@ -1475,6 +1701,14 @@ async function handlePms(req, res, ctx) {
     if (room.status === 'disponible' && checkIn <= day(0)) {
       await db.run('UPDATE rooms SET status = ? WHERE id = ?', [source === 'walk_in' ? 'occupee' : 'reservee', room.id]);
     }
+    await linkGuestToUser(db, { email: guest.email, phone: guest.phone || phone, fullName: guestName });
+    await pushNotice(db, {
+      category: 'RÉSERVATION',
+      title: source === 'walk_in' ? 'Walk-in' : 'Nouvelle réservation',
+      body: `Chambre ${roomNumber} — ${guestName}, ${checkIn} ${checkInTime}.`,
+      href: '/reservations',
+      roles: ['receptionist', 'manager', 'owner'],
+    });
     ok(
       res,
       { id: reservationId, occupants },
@@ -1735,11 +1969,13 @@ async function handlePms(req, res, ctx) {
       }
     }
     if (taskStatus === 'pret') {
-      await db.run(
-        `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-         VALUES ('ÉTAGES', 'Chambre prête', ?, '/housekeeping', 0, ?)`,
-        [`Chambre ${room} nettoyée et prête.`, stampNow()],
-      );
+      await pushNotice(db, {
+        category: 'ÉTAGES',
+        title: 'Chambre prête',
+        body: `Chambre ${room} nettoyée et prête.`,
+        href: '/housekeeping',
+        roles: ['receptionist', 'manager'],
+      });
     }
     ok(res, { room, status: taskStatus }, 'Statut chambre mis à jour.');
     return true;
@@ -1852,11 +2088,13 @@ async function handlePms(req, res, ctx) {
       ],
     );
     const issueId = await db.lastId();
-    await db.run(
-      `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-       VALUES ('SIGNALEMENT', ?, ?, '/issues', 0, ?)`,
-      [`Chambre ${room}`, description, stampNow()],
-    );
+    await pushNotice(db, {
+      category: 'SIGNALEMENT',
+      title: `Chambre ${room}`,
+      body: description,
+      href: '/issues',
+      roles: ['housekeeping', 'manager', 'owner'],
+    });
     ok(res, { id: issueId, room }, 'Signalement enregistré.', 201);
     return true;
   }
@@ -2219,11 +2457,14 @@ async function handlePms(req, res, ctx) {
       'SELECT id, full_name, email, phone, status, created_at FROM users WHERE id = ?',
       [await db.lastId()],
     );
-    await db.run(
-      `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-       VALUES ('COMPTE', 'Compte client', ?, '/clients', 0, datetime('now'))`,
-      [`${fullName} (${email}) peut se connecter à l’espace client.`],
-    );
+    await linkGuestToUser(db, { email, phone, fullName });
+    await pushNotice(db, {
+      category: 'COMPTE',
+      title: 'Nouveau compte client',
+      body: `${fullName} (${email}) peut se connecter à l’espace client.`,
+      href: '/clients',
+      roles: ['owner', 'manager'],
+    });
     ok(res, { item: created }, 'Compte client créé.', 201);
     return true;
   }
@@ -2943,11 +3184,13 @@ async function handlePms(req, res, ctx) {
       'INSERT INTO hk_issues (room_number, task_id, reporter, category, description, status, at) VALUES (?,?,?,?,?,?,?)',
       [room.number, null, who.name, levelLabel, description, 'ouverte', when],
     );
-    await db.run(
-      `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-       VALUES ('SIGNALEMENT', ?, ?, '/issues', 0, ?)`,
-      [`Chambre ${room.number} · ${levelLabel}`, description, when],
-    );
+    await pushNotice(db, {
+      category: 'SIGNALEMENT',
+      title: `Chambre ${room.number} · ${levelLabel}`,
+      body: description,
+      href: '/issues',
+      roles: ['housekeeping', 'manager', 'owner'],
+    });
     await writeAudit(db, actor, {
       action: 'room.maintenance.open',
       entityType: 'room',
@@ -2971,11 +3214,13 @@ async function handlePms(req, res, ctx) {
     }
     const body = await readBody(req);
     await db.run("UPDATE rooms SET status = 'maintenance' WHERE number = ?", [body.room_number]);
-    await db.run(
-      `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-       VALUES ('MAINTENANCE', 'Chambre indisponible', ?, '/rooms', 0, ?)`,
-      [`Chambre ${body.room_number} placée hors service.`, stampNow()],
-    );
+    await pushNotice(db, {
+      category: 'MAINTENANCE',
+      title: 'Chambre indisponible',
+      body: `Chambre ${body.room_number} placée hors service.`,
+      href: '/rooms',
+      roles: ['manager', 'owner'],
+    });
     ok(res, { room: body.room_number }, 'Chambre rendue indisponible.');
     return true;
   }
@@ -2987,11 +3232,13 @@ async function handlePms(req, res, ctx) {
       [body.room_number, body.attendant || 'Étages', 'urgente', 'non_prise', 20, stampNow()],
     );
     await db.run("UPDATE rooms SET status = 'nettoyage' WHERE number = ?", [body.room_number]);
-    await db.run(
-      `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-       VALUES ('URGENCE', 'Nettoyage urgent', ?, '/housekeeping', 0, ?)`,
-      [`Chambre ${body.room_number} à nettoyer en urgence.`, stampNow()],
-    );
+    await pushNotice(db, {
+      category: 'URGENCE',
+      title: 'Nettoyage urgent',
+      body: `Chambre ${body.room_number} à nettoyer en urgence.`,
+      href: '/housekeeping',
+      roles: ['housekeeping'],
+    });
     ok(res, { id: await db.lastId() }, 'Urgence de nettoyage signalée.', 201);
     return true;
   }
@@ -3572,16 +3819,47 @@ async function handlePms(req, res, ctx) {
       const lines = ids.length
         ? await db.all(`SELECT * FROM restaurant_order_items WHERE order_id IN (${ids.map(() => '?').join(',')})`, ids)
         : [];
+      const soldAgg = await db.all('SELECT name, SUM(qty) AS sold_qty, COUNT(DISTINCT order_id) AS order_count FROM restaurant_order_items GROUP BY name');
+      const soldMap = new Map();
+      for (const line of soldAgg) {
+        const key = String(line.name || '').trim().toLowerCase();
+        if (!key) continue;
+        soldMap.set(key, { sold_qty: Number(line.sold_qty || 0), order_count: Number(line.order_count || 0) });
+      }
+      const menuRows = await db.all('SELECT * FROM menu_items ORDER BY category, name');
+      await syncMenuItemCategories(db, menuRows);
+      let topSold = 0;
+      let topOrdered = 0;
+      const withStats = menuRows.map((row) => {
+        const stat = soldMap.get(String(row.name || '').trim().toLowerCase());
+        const soldQty = stat ? stat.sold_qty : 0;
+        const orderCount = stat ? stat.order_count : 0;
+        if (soldQty > topSold) topSold = soldQty;
+        if (orderCount > topOrdered) topOrdered = orderCount;
+        return { ...row, sold_qty: soldQty, order_count: orderCount };
+      });
+      const items = withStats.map((row) => ({
+        ...row,
+        top_sold: topSold > 0 && Number(row.sold_qty) === topSold,
+        top_ordered: topOrdered > 0 && Number(row.order_count) === topOrdered,
+      }));
       ok(res, {
         date: today,
-        items: await db.all('SELECT * FROM menu_items ORDER BY category, name'),
+        items,
+        categories: await (async () => {
+          try {
+            return await db.all('SELECT * FROM menu_categories ORDER BY kind, name');
+          } catch {
+            return [];
+          }
+        })(),
         orders: orders.map((row) => ({
           ...row,
           seller: sellerByEmail.get(String(row.user_email || '').trim().toLowerCase()) || row.user_email || 'Restaurant',
           items: lines.filter((line) => Number(line.order_id) === Number(row.id)),
         })),
         occupants: await db.all(
-          `SELECT r.id AS reservation_id, rm.number AS room_number, g.full_name AS guest_name
+          `SELECT r.id AS reservation_id, rm.number AS room_number, g.full_name AS guest_name, g.phone AS guest_phone, g.email AS guest_email
            FROM reservations r
            JOIN rooms rm ON rm.id = r.room_id
            JOIN guests g ON g.id = r.guest_id
@@ -3608,6 +3886,7 @@ async function handlePms(req, res, ctx) {
         return true;
       }
       await db.run('UPDATE menu_items SET stock=?, min_stock=? WHERE id=?', [stock, minStock, item.id]);
+      await notifyMenuLow(db, item.id);
       ok(res, { id: item.id }, 'Stock mis à jour.');
       return true;
     }
@@ -3638,6 +3917,7 @@ async function handlePms(req, res, ctx) {
       const guestName = String(body.guest_name || '').trim();
       const guestPhone = String(body.guest_phone || '').trim();
       const roomNumber = String(body.room_number || '').trim();
+      const tableNumber = String(body.table_number || '').trim();
       if (guestName.length < 2) {
         fail(res, 'Indiquez le nom du client.');
         return true;
@@ -3647,8 +3927,8 @@ async function handlePms(req, res, ctx) {
         return true;
       }
       await db.run(
-        'INSERT INTO restaurant_orders (guest_name, guest_phone, room_number, reservation_id, mode, pay, status, total, at, user_email) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        [guestName, guestPhone || null, roomNumber || null, body.reservation_id || null, mode, pay, 'commandee', total, stampNow(), actor.email],
+        'INSERT INTO restaurant_orders (guest_name, guest_phone, room_number, table_number, reservation_id, mode, pay, status, total, at, user_email) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        [guestName, guestPhone || null, roomNumber || null, tableNumber || null, body.reservation_id || null, mode, pay, 'commandee', total, stampNow(), actor.email],
       );
       const orderId = await db.lastId();
       for (const line of prepared) {
@@ -3656,7 +3936,16 @@ async function handlePms(req, res, ctx) {
           orderId, line.dish.name, line.qty, line.dish.price,
         ]);
         await db.run('UPDATE menu_items SET stock = stock - ? WHERE id = ?', [line.qty, line.dish.id]);
+        await notifyMenuLow(db, line.dish.id);
       }
+      const where = [roomNumber ? `ch. ${roomNumber}` : null, tableNumber ? `table ${tableNumber}` : null].filter(Boolean).join(' · ');
+      await pushNotice(db, {
+        category: 'COMMANDE',
+        title: 'Nouvelle commande',
+        body: `${guestName}${where ? ` · ${where}` : ''} · ${prepared.map((line) => `${line.dish.name} ×${line.qty}`).join(', ')}`,
+        href: '/orders',
+        roles: ['restaurant'],
+      });
       if (pay === 'note' && body.reservation_id) {
         const label = prepared.map((line) => `${line.dish.name} ×${line.qty}`).join(', ').slice(0, 180);
         await db.run(
@@ -3670,12 +3959,28 @@ async function handlePms(req, res, ctx) {
     if (method === 'POST' && pathName === '/pms/restaurant/item') {
       const body = await readBody(req);
       const name = String(body.name || '').trim();
-      const category = String(body.category || 'Plat').trim() || 'Plat';
+      const wanted = String(body.category || '').trim();
       const description = String(body.description || '').trim();
       const photo = String(body.photo || '').trim();
       const price = Number(body.price || 0);
+      let cats = [];
+      try {
+        cats = await db.all('SELECT name FROM menu_categories WHERE IFNULL(active, 1) = 1');
+      } catch {
+        cats = [];
+      }
+      const picked = cats.find((row) => String(row.name || '').trim().toLowerCase() === wanted.toLowerCase());
+      if (!picked) {
+        fail(res, 'Choisissez une catégorie existante.');
+        return true;
+      }
+      const category = String(picked.name).trim();
       if (name.length < 2) {
         fail(res, 'Indiquez le nom du plat.');
+        return true;
+      }
+      if (!photo) {
+        fail(res, 'Ajoutez une photo au plat ou à la boisson.');
         return true;
       }
       if (!Number.isFinite(price) || price < 0) {
@@ -3793,7 +4098,92 @@ async function handlePms(req, res, ctx) {
         'INSERT INTO restaurant_moves (good_id, good_name, qty, direction, taken_by, note, at, actor_email) VALUES (?,?,?,?,?,?,?,?)',
         [good.id, good.name, qty, direction, takenBy || null, note || null, stampNow(), actor.email],
       );
+      if (direction === 'sortie') await notifyGoodLow(db, good.id);
       ok(res, { id: good.id, stock: next }, direction === 'entree' ? 'Entrée enregistrée.' : 'Sortie enregistrée.');
+      return true;
+    }
+    if (method === 'POST' && pathName === '/pms/restaurant/category') {
+      const body = await readBody(req);
+      const name = String(body.name || '').trim();
+      const kind = body.kind === 'drink' ? 'drink' : 'food';
+      if (!name) {
+        fail(res, 'Indiquez le nom de la catégorie.');
+        return true;
+      }
+      const rows = await db.all('SELECT id, name, kind, active FROM menu_categories');
+      const existing = rows.find((row) => String(row.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (existing) {
+        if (!Number(existing.active ?? 1)) {
+          await db.run('UPDATE menu_categories SET active = 1, kind = ? WHERE id = ?', [kind, existing.id]);
+          ok(res, { id: existing.id }, 'Catégorie réactivée.');
+          return true;
+        }
+        fail(res, 'Cette catégorie existe déjà.');
+        return true;
+      }
+      await db.run('INSERT INTO menu_categories (name, kind, active) VALUES (?, ?, 1)', [name, kind]);
+      ok(res, { id: await db.lastId() }, 'Catégorie créée.', 201);
+      return true;
+    }
+    if (method === 'POST' && pathName === '/pms/restaurant/category/update') {
+      const body = await readBody(req);
+      const id = Number(body.id || 0);
+      const name = String(body.name || '').trim();
+      const current = await db.get('SELECT id, name FROM menu_categories WHERE id = ?', [id]);
+      if (!current) {
+        fail(res, 'Catégorie introuvable.', 404);
+        return true;
+      }
+      if (!name) {
+        fail(res, 'Indiquez le nom de la catégorie.');
+        return true;
+      }
+      const rows = await db.all('SELECT id, name FROM menu_categories');
+      const clash = rows.find((row) => Number(row.id) !== id && String(row.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (clash) {
+        fail(res, 'Cette catégorie existe déjà.');
+        return true;
+      }
+      await db.run('UPDATE menu_categories SET name = ? WHERE id = ?', [name, id]);
+      const dishes = await db.all('SELECT id, category FROM menu_items');
+      for (const dish of dishes) {
+        if (String(dish.category || '').trim().toLowerCase() === String(current.name || '').trim().toLowerCase()) {
+          await db.run('UPDATE menu_items SET category = ? WHERE id = ?', [name, dish.id]);
+        }
+      }
+      ok(res, { id }, 'Catégorie mise à jour.');
+      return true;
+    }
+    if (method === 'POST' && pathName === '/pms/restaurant/category/delete') {
+      const body = await readBody(req);
+      const id = Number(body.id || 0);
+      const category = await db.get('SELECT id, name FROM menu_categories WHERE id = ?', [id]);
+      if (!category) {
+        fail(res, 'Catégorie introuvable.', 404);
+        return true;
+      }
+      const dishes = await db.all('SELECT category FROM menu_items');
+      const used = dishes.some((row) => String(row.category || '').trim().toLowerCase() === String(category.name || '').trim().toLowerCase());
+      if (used) {
+        await db.run('UPDATE menu_categories SET active = 0 WHERE id = ?', [id]);
+        ok(res, { id, active: 0 }, 'Catégorie désactivée. Les plats qui l’utilisent sont conservés.');
+        return true;
+      }
+      await db.run('DELETE FROM menu_categories WHERE id = ?', [id]);
+      ok(res, { id }, 'Catégorie supprimée.');
+      return true;
+    }
+    if (method === 'POST' && pathName === '/pms/restaurant/category/active') {
+      const body = await readBody(req);
+      const id = Number(body.id || 0);
+      const category = await db.get('SELECT id FROM menu_categories WHERE id = ?', [id]);
+      if (!category) {
+        fail(res, 'Catégorie introuvable.', 404);
+        return true;
+      }
+      const active = body.active === true || body.active === 1 || body.active === '1' ? 1 : 0;
+      await db.run('UPDATE menu_categories SET active = ? WHERE id = ?', [active, id]);
+      ok(res, { id, active }, active ? 'Catégorie réactivée.' : 'Catégorie désactivée.');
       return true;
     }
     if (method === 'POST' && pathName === '/pms/restaurant/order') {
@@ -3821,16 +4211,62 @@ async function handlePms(req, res, ctx) {
       fail(res, 'Espace réservé aux clients.', 403);
       return true;
     }
-    const stayRows = async () => db.all(
-      `SELECT r.id, r.status, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.total,
-              rm.number AS room_number, rm.type AS room_type, rm.photo AS room_photo, g.full_name AS guest_name, g.email AS guest_email
-       FROM reservations r
-       JOIN guests g ON g.id = r.guest_id
-       JOIN rooms rm ON rm.id = r.room_id
-       WHERE g.email = ? OR g.full_name = ?
-       ORDER BY r.check_in DESC`,
-      [actor.email, actor.full_name],
-    );
+    const stayRows = async () => {
+      const mail = String(actor.email || '').trim().toLowerCase();
+      const name = String(actor.full_name || '').trim().toLowerCase();
+      const digits = phoneDigits(actor.phone);
+      const guests = await db.all('SELECT id, full_name, email, phone FROM guests');
+      const ids = guests.filter((row) => {
+        if (mail && String(row.email || '').trim().toLowerCase() === mail) return true;
+        if (name && String(row.full_name || '').trim().toLowerCase() === name) return true;
+        const guestDigits = phoneDigits(row.phone);
+        if (digits.length >= 8 && guestDigits.length >= 8 && (guestDigits.endsWith(digits.slice(-8)) || digits.endsWith(guestDigits.slice(-8)))) return true;
+        return false;
+      }).map((row) => Number(row.id));
+      if (!ids.length) return [];
+      return db.all(
+        `SELECT r.id, r.status, r.check_in, r.check_out, r.check_in_time, r.check_out_time, r.total,
+                rm.number AS room_number, rm.type AS room_type, rm.photo AS room_photo,
+                g.full_name AS guest_name, g.email AS guest_email, g.phone AS guest_phone
+         FROM reservations r
+         JOIN guests g ON g.id = r.guest_id
+         JOIN rooms rm ON rm.id = r.room_id
+         WHERE r.guest_id IN (${ids.map(() => '?').join(',')})
+         ORDER BY r.check_in DESC`,
+        ids,
+      );
+    };
+    const remindStay = async (stays) => {
+      const now = localNowStamp();
+      for (const stay of stays) {
+        if (stay.status === 'annulee') continue;
+        const end = at(stay.check_out, stay.check_out_time || '12:00');
+        const hours = (new Date(String(end).replace(' ', 'T')).getTime() - new Date(String(now).replace(' ', 'T')).getTime()) / 3600000;
+        let title = '';
+        let body = '';
+        if (hours <= 0) {
+          title = 'Séjour terminé';
+          body = `Votre séjour chambre ${stay.room_number} est arrivé à son terme. #${stay.id}-end`;
+        } else if (hours <= 2) {
+          title = 'Départ imminent';
+          body = `Votre départ chambre ${stay.room_number} est prévu à ${stay.check_out_time || '12:00'}. #${stay.id}-2h`;
+        } else if (hours <= 6) {
+          title = 'Départ dans quelques heures';
+          body = `Votre séjour chambre ${stay.room_number} se termine aujourd’hui à ${stay.check_out_time || '12:00'}. #${stay.id}-6h`;
+        } else if (hours <= 24) {
+          title = 'Départ bientôt';
+          body = `Votre séjour chambre ${stay.room_number} se termine le ${String(stay.check_out).slice(0, 10)} à ${stay.check_out_time || '12:00'}. #${stay.id}-24h`;
+        } else continue;
+        await pushNotice(db, {
+          category: 'SÉJOUR',
+          title,
+          body,
+          href: '/stay',
+          roles: ['client'],
+          userId: actor.id,
+        });
+      }
+    };
     const activeStay = (rows) => {
       const today = day(0);
       const now = localNowStamp();
@@ -3889,23 +4325,40 @@ async function handlePms(req, res, ctx) {
       await releaseDailyMenu(db, today);
       const gear = await db.all('SELECT room_id, COUNT(*) AS n FROM room_equipment GROUP BY room_id');
       const gearCount = new Map(gear.map((row) => [Number(row.room_id), Number(row.n)]));
-      const rooms = (await enrichRooms(db)).map((room) => ({
-        id: room.id,
-        number: room.number,
-        type: room.type,
-        floor: room.floor,
-        status: room.status,
-        price_night: room.price_night,
-        capacity: room.capacity,
-        photo: room.photo,
-        video: room.video || null,
-        description: room.description,
-        equipment_count: gearCount.get(Number(room.id)) || 0,
-        next_free_date: room.next_free_date,
-        next_free_time: room.next_free_time,
-        bookable: room.status !== 'hors_service' && !(room.status === 'maintenance' && room.maintenance_level !== 'legere'),
-      }));
+      const roomsRaw = await db.all(
+        "SELECT id, number, type, floor, status, price_night, capacity, photo, video, description, maintenance_level FROM rooms WHERE IFNULL(deleted_at, '') = '' ORDER BY CAST(number AS UNSIGNED), number",
+      );
+      const liveStays = await db.all(
+        "SELECT room_id, check_out, check_out_time FROM reservations WHERE status IN ('en_cours','confirmee')",
+      );
+      const nextByRoom = new Map();
+      for (const row of liveStays) {
+        const key = Number(row.room_id);
+        const end = String(row.check_out || '').slice(0, 10);
+        const prev = nextByRoom.get(key);
+        if (!prev || end > prev.date) nextByRoom.set(key, { date: end, time: row.check_out_time || '12:00' });
+      }
+      const rooms = roomsRaw.map((room) => {
+        const occ = nextByRoom.get(Number(room.id));
+        return {
+          id: room.id,
+          number: room.number,
+          type: room.type,
+          floor: room.floor,
+          status: room.status,
+          price_night: room.price_night,
+          capacity: room.capacity,
+          photo: room.photo,
+          video: room.video || null,
+          description: room.description,
+          equipment_count: gearCount.get(Number(room.id)) || 0,
+          next_free_date: occ ? occ.date : today,
+          next_free_time: occ ? occ.time : '14:00',
+          bookable: room.status !== 'hors_service' && !(room.status === 'maintenance' && room.maintenance_level !== 'legere'),
+        };
+      });
       const stays = await stayRows();
+      void remindStay(stays).catch(() => {});
       const stayIds = stays.map((row) => row.id);
       const orders = stayIds.length
         ? await db.all(
@@ -3917,11 +4370,17 @@ async function handlePms(req, res, ctx) {
       const lines = ids.length
         ? await db.all(`SELECT * FROM restaurant_order_items WHERE order_id IN (${ids.map(() => '?').join(',')})`, ids)
         : [];
+      let menuCats = [];
+      try {
+        menuCats = await db.all('SELECT id, name, kind, active FROM menu_categories WHERE IFNULL(active, 1) = 1 ORDER BY kind, name');
+      } catch {
+        menuCats = [];
+      }
       ok(res, {
         rooms,
+        categories: menuCats,
         menu: await db.all(
-          'SELECT id, name, category, price, description, photo FROM menu_items WHERE available = 1 AND of_day = 1 AND day_date = ? ORDER BY category, name',
-          [today],
+          'SELECT id, name, category, price, description, photo FROM menu_items WHERE IFNULL(available, 1) = 1 ORDER BY category, name',
         ),
         stays: stays.map((row) => ({
           id: row.id,
@@ -3971,11 +4430,13 @@ async function handlePms(req, res, ctx) {
         'INSERT INTO chat_messages (thread_id, sender_id, body, created_at) VALUES (?,?,?,?)',
         [thread.id, actor.id, text.slice(0, 1000), stampNow()],
       );
-      await db.run(
-        `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-         VALUES ('RÉCEPTION', 'Message client', ?, '/messages', 0, ?)`,
-        [`${actor.full_name} : ${text.slice(0, 160)}`, stampNow()],
-      );
+      await pushNotice(db, {
+        category: 'RÉCEPTION',
+        title: 'Message client',
+        body: `${actor.full_name} : ${text.slice(0, 160)}`,
+        href: '/messages',
+        roles: ['receptionist'],
+      });
       ok(res, { messages: await guestDeskMessages(db, actor) }, 'Message envoyé.', 201);
       return true;
     }
@@ -4002,11 +4463,13 @@ async function handlePms(req, res, ctx) {
           [here.room_number, '', 'urgente', 'non_prise', 30, stampNow(), note, stampNow()],
         );
       }
-      await db.run(
-        `INSERT INTO notifications (category, title, body, href, is_read, created_at)
-         VALUES ('ÉTAGES', 'Nettoyage demandé', ?, '/housekeeping', 0, ?)`,
-        [`Chambre ${here.room_number} · ${actor.full_name}`, stampNow()],
-      );
+      await pushNotice(db, {
+        category: 'ÉTAGES',
+        title: 'Nettoyage demandé',
+        body: `Chambre ${here.room_number} · ${actor.full_name}`,
+        href: '/housekeeping',
+        roles: ['housekeeping'],
+      });
       ok(res, { cleaning: true }, 'Demande transmise à l’entretien.', 201);
       return true;
     }
@@ -4067,42 +4530,55 @@ async function handlePms(req, res, ctx) {
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [guest.id, room.id, checkIn, checkOut, checkInTime, checkOutTime, 'confirmee', quote.total, 'reservation', 1, 'Réservation en ligne', 0, 1, 0, quote.list, 0],
       );
-      ok(res, { id: await db.lastId() }, 'Réservation confirmée.', 201);
+      const stayId = await db.lastId();
+      await pushNotice(db, {
+        category: 'RÉSERVATION',
+        title: 'Réservation en ligne',
+        body: `${actor.full_name} · chambre ${room.number}, ${checkIn} → ${checkOut}.`,
+        href: '/reservations',
+        roles: ['receptionist', 'manager', 'owner'],
+      });
+      ok(res, { id: stayId }, 'Réservation confirmée.', 201);
       return true;
     }
     if (method === 'POST' && pathName === '/pms/guest/order') {
       const body = await readBody(req);
       const stays = await stayRows();
       const here = activeStay(stays);
-      if (!here) {
-        fail(res, 'Les commandes restaurant s’ouvrent lorsque votre séjour a commencé.');
+      const place = String(body.place || body.table_number || '').trim();
+      let mode = body.mode === 'chambre' ? 'chambre' : 'salle';
+      if (mode === 'chambre' && !here) {
+        fail(res, 'La note de chambre n’est disponible que pendant un séjour.');
         return true;
       }
-      const mode = body.mode === 'salle' ? 'salle' : 'chambre';
+      if (mode === 'salle' && place.length < 2) {
+        fail(res, 'Indiquez le lieu (table, terrasse, lobby…).');
+        return true;
+      }
       const pay = mode === 'salle' ? 'especes' : 'note';
       const lines = Array.isArray(body.items) ? body.items : [];
       if (!lines.length) {
         fail(res, 'Choisissez au moins un plat.');
         return true;
       }
-      const today = day(0);
       const prepared = [];
       for (const line of lines) {
         const dish = await db.get(
-          'SELECT * FROM menu_items WHERE id = ? AND available = 1 AND of_day = 1 AND day_date = ?',
-          [Number(line.product_id || line.id), today],
+          'SELECT * FROM menu_items WHERE id = ? AND IFNULL(available, 1) = 1',
+          [Number(line.product_id || line.id)],
         );
         const qty = Number(line.qty || 0);
         if (!dish || qty <= 0) {
-          fail(res, 'Un plat n’est plus au menu du jour.');
+          fail(res, 'Un plat n’est plus disponible.');
           return true;
         }
         prepared.push({ dish, qty });
       }
       const total = prepared.reduce((sum, line) => sum + line.qty * Number(line.dish.price || 0), 0);
+      const guestName = here?.guest_name || actor.full_name;
       await db.run(
-        'INSERT INTO restaurant_orders (guest_name, room_number, reservation_id, mode, pay, status, total, at, user_email) VALUES (?,?,?,?,?,?,?,?,?)',
-        [here.guest_name, here.room_number, here.id, mode, pay, 'commandee', total, stampNow(), actor.email],
+        'INSERT INTO restaurant_orders (guest_name, guest_phone, room_number, table_number, reservation_id, mode, pay, status, total, at, user_email) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        [guestName, actor.phone || null, here?.room_number || null, place || null, here?.id || null, mode, pay, 'commandee', total, stampNow(), actor.email],
       );
       const orderId = await db.lastId();
       for (const line of prepared) {
@@ -4110,15 +4586,65 @@ async function handlePms(req, res, ctx) {
           orderId, line.dish.name, line.qty, line.dish.price,
         ]);
         await db.run('UPDATE menu_items SET stock = GREATEST(IFNULL(stock, 0) - ?, 0) WHERE id = ?', [line.qty, line.dish.id]);
+        await notifyMenuLow(db, line.dish.id);
       }
-      if (pay === 'note') {
+      await pushNotice(db, {
+        category: 'COMMANDE',
+        title: 'Nouvelle commande',
+        body: `${guestName}${here?.room_number ? ` · ch. ${here.room_number}` : place ? ` · ${place}` : ''} · ${prepared.map((line) => `${line.dish.name} ×${line.qty}`).join(', ')}`,
+        href: '/orders',
+        roles: ['restaurant'],
+      });
+      if (pay === 'note' && here) {
         const label = prepared.map((line) => `${line.dish.name} ×${line.qty}`).join(', ').slice(0, 180);
         await db.run(
           'INSERT INTO folio_charges (reservation_id, guest_name, source, label, amount, at, outlet) VALUES (?,?,?,?,?,?,?)',
-          [here.id, here.guest_name, 'restaurant', label || 'Restaurant', total, stampNow(), 'Restaurant'],
+          [here.id, guestName, 'restaurant', label || 'Restaurant', total, stampNow(), 'Restaurant'],
         );
       }
       ok(res, { id: orderId }, pay === 'note' ? 'Commande ajoutée à votre note.' : 'Commande envoyée. Règlement en espèces au restaurant.', 201);
+      return true;
+    }
+    if (method === 'POST' && pathName === '/pms/guest/shop') {
+      const body = await readBody(req);
+      const lines = Array.isArray(body.items) ? body.items : [];
+      if (!lines.length) {
+        fail(res, 'Votre panier est vide.');
+        return true;
+      }
+      const prepared = [];
+      for (const line of lines) {
+        const item = await db.get(
+          "SELECT * FROM products WHERE id = ? AND price > 0 AND IFNULL(deleted_at, '') = ''",
+          [Number(line.product_id || line.id)],
+        );
+        const qty = Number(line.qty || 0);
+        if (!item || qty <= 0) {
+          fail(res, 'Un article n’est plus disponible.');
+          return true;
+        }
+        prepared.push({ item, qty });
+      }
+      const total = prepared.reduce((sum, line) => sum + line.qty * Number(line.item.price || 0), 0);
+      await db.run(
+        'INSERT INTO restaurant_orders (guest_name, guest_phone, room_number, table_number, reservation_id, mode, pay, status, total, at, user_email) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        [actor.full_name, actor.phone || null, null, 'Boutique', null, 'salle', 'especes', 'commandee', total, stampNow(), actor.email],
+      );
+      const orderId = await db.lastId();
+      for (const line of prepared) {
+        await db.run('INSERT INTO restaurant_order_items (order_id, name, qty, price) VALUES (?,?,?,?)', [
+          orderId, line.item.name, line.qty, line.item.price,
+        ]);
+        await db.run('UPDATE products SET stock = GREATEST(IFNULL(stock, 0) - ?, 0) WHERE id = ?', [line.qty, line.item.id]);
+      }
+      await pushNotice(db, {
+        category: 'COMMANDE',
+        title: 'Commande boutique',
+        body: `${actor.full_name} · ${prepared.map((line) => `${line.item.name} ×${line.qty}`).join(', ')}`,
+        href: '/orders',
+        roles: ['restaurant', 'receptionist'],
+      });
+      ok(res, { id: orderId }, 'Commande boutique enregistrée. Règlement à la réception.', 201);
       return true;
     }
     fail(res, 'Action client inconnue.', 404);

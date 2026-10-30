@@ -12,8 +12,9 @@ import { useRouter } from 'expo-router';
 
 import { AppIcon, type BoxIconName } from '@/components/box-icon';
 import { GoldBtn } from '@/components/hotel/kit';
+import { VisitorShell } from '@/components/workspace/visitor-shell';
 import { WorkspaceShell } from '@/components/workspace/workspace-shell';
-import { Breakpoints, Palette, Radius } from '@/constants/theme';
+import { Breakpoints, MaxContentWidth, Palette, Radius } from '@/constants/theme';
 
 type HotelShellProps = {
   title: string;
@@ -27,9 +28,10 @@ type HotelShellProps = {
   fill?: boolean;
   hideHeading?: boolean;
   edgeToEdge?: boolean;
+  visit?: boolean;
 };
 
-export function HotelShell({ title, subtitle, children, back, onBack, right, loading, error, fill, hideHeading, edgeToEdge }: HotelShellProps) {
+export function HotelShell({ title, subtitle, children, back, onBack, right, loading, error, fill, hideHeading, edgeToEdge, visit }: HotelShellProps) {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isDesktop = width >= Breakpoints.desktop;
@@ -64,23 +66,27 @@ export function HotelShell({ title, subtitle, children, back, onBack, right, loa
           children
         );
 
+  const Shell = visit ? VisitorShell : WorkspaceShell;
+
   return (
-    <WorkspaceShell>
+    <Shell>
       {fill ? (
         <View style={[styles.flex, styles.fillPad, !isDesktop && styles.fillPadMobile, edgeToEdge && styles.fillBleed]}>
-          {heading}
-          <View style={styles.flex}>{body}</View>
+          <View style={[styles.page, isDesktop && !edgeToEdge && styles.pageDesktop]}>
+            {heading}
+            <View style={styles.flex}>{body}</View>
+          </View>
         </View>
       ) : (
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={[styles.content, !isDesktop && styles.contentMobile]}
+        contentContainerStyle={[styles.content, isDesktop && styles.contentDesktop]}
         showsVerticalScrollIndicator={false}>
         {heading}
         {body}
       </ScrollView>
       )}
-    </WorkspaceShell>
+    </Shell>
   );
 }
 
@@ -146,16 +152,22 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     flexDirection: 'column',
-    paddingHorizontal: 18,
+    paddingHorizontal: 9,
     paddingTop: 16,
     paddingBottom: 12,
     gap: 10,
   },
+  fillPadDesktop: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+  },
   fillPadMobile: {
     paddingBottom: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 5,
     minHeight: 0,
   },
+  page: { flex: 1, minHeight: 0, width: '100%' },
+  pageDesktop: { maxWidth: MaxContentWidth, alignSelf: 'center' },
   fillBleed: {
     paddingHorizontal: 0,
     paddingTop: 0,
@@ -164,12 +176,17 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   content: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 9,
     paddingTop: 16,
     paddingBottom: 40,
     gap: 14,
+    width: '100%',
   },
-  contentMobile: {
+  contentDesktop: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
     paddingBottom: 28,
   },
   heading: {

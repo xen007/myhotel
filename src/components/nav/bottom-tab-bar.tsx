@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/box-icon';
@@ -20,7 +20,8 @@ const TAB_ORDER = [
 
 const RECEPTION_TABS = ['/home', '/reservations', '/pos', '/messages'];
 const RESTAURANT_TABS = ['/home', '/daily', '/orders', '/service'];
-const CLIENT_TABS = ['/home', '/browse', '/table', '/note'];
+const CLIENT_TABS = ['/home', '/table', '/note', '/clean', '/desk'];
+const VISITOR_TABS = ['/welcome', '/browse', '/carte', '/reviews', '/about'];
 
 const RECEPTION_LABEL: Record<string, string> = {
   '/home': 'Accueil',
@@ -46,10 +47,16 @@ const SHORT_LABEL: Record<string, string> = {
   '/drinks': 'Boisson',
   '/kitchen': 'Stock',
   '/browse': 'Chambres',
-  '/table': 'Restaurant',
+  '/table': 'Resto',
   '/stay': 'Historique',
   '/note': 'Note',
   '/clean': 'Nettoyage',
+  '/desk': 'Messagerie',
+  '/welcome': 'Accueil',
+  '/about': 'À propos',
+  '/prestations': 'Services',
+  '/reviews': 'Avis',
+  '/carte': 'Resto',
 };
 
 export function BottomTabBar({
@@ -68,8 +75,8 @@ export function BottomTabBar({
   role?: string | null;
 }) {
   const insets = useSafeAreaInsets();
-  const order = role === 'receptionist' ? RECEPTION_TABS : role === 'restaurant' ? RESTAURANT_TABS : role === 'client' ? CLIENT_TABS : TAB_ORDER;
-  const tabs = order.map((href) => links.find((item) => item.href === href)).filter(Boolean).slice(0, 4) as WorkspaceLink[];
+  const order = role === 'receptionist' ? RECEPTION_TABS : role === 'restaurant' ? RESTAURANT_TABS : role === 'client' ? CLIENT_TABS : role === 'visitor' ? VISITOR_TABS : TAB_ORDER;
+  const tabs = order.map((href) => links.find((item) => item.href === href)).filter(Boolean).slice(0, role === 'client' || role === 'visitor' ? 5 : 4) as WorkspaceLink[];
 
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -105,10 +112,15 @@ const styles = StyleSheet.create({
     backgroundColor: Palette.white,
     borderTopWidth: 1,
     borderTopColor: 'rgba(212,175,55,0.35)',
-    shadowColor: Palette.ink,
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: -4 },
+    ...Platform.select({
+      web: { boxShadow: '0 -4px 16px rgba(20,22,34,0.12)' },
+      default: {
+        shadowColor: Palette.ink,
+        shadowOpacity: 0.12,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: -4 },
+      },
+    }),
     elevation: 18,
     zIndex: 20,
     overflow: 'visible',

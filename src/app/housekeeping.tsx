@@ -407,7 +407,7 @@ export default function HousekeepingScreen() {
               contentContainerStyle={styles.agentListInner}
               nestedScrollEnabled
               persistentScrollbar
-              showsVerticalScrollIndicator>
+              showsVerticalScrollIndicator={false}>
               {agentHits.map((agent) => {
                 const on = helpers.includes(agent.name);
                 return (

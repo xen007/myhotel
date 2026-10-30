@@ -48,9 +48,17 @@ export function isStaffRole(role?: string | null): role is StaffRole {
   return role === 'receptionist' || role === 'manager' || role === 'housekeeping' || role === 'owner' || role === 'restaurant';
 }
 
+export const VISITOR_LINKS: WorkspaceLink[] = [
+  { href: '/welcome', label: 'Accueil', icon: 'home', roles: ['client'] },
+  { href: '/about', label: 'À propos', icon: 'info-circle', roles: ['client'] },
+  { href: '/prestations', label: 'Services', icon: 'spa', roles: ['client'] },
+  { href: '/reviews', label: 'Témoignages', icon: 'star', roles: ['client'] },
+  { href: '/browse', label: 'Chambres', icon: 'bed', roles: ['client'] },
+  { href: '/carte', label: 'Restaurant', icon: 'restaurant', roles: ['client'] },
+];
+
 export const CLIENT_LINKS: WorkspaceLink[] = [
   { href: '/home', label: 'Accueil', icon: 'home', roles: ['client'] },
-  { href: '/browse', label: 'Chambres', icon: 'bed', roles: ['client'] },
   { href: '/table', label: 'Restaurant', icon: 'restaurant', roles: ['client'] },
   { href: '/note', label: 'Note', icon: 'receipt', roles: ['client'] },
   { href: '/stay', label: 'Historique', icon: 'time', roles: ['client'] },
@@ -61,9 +69,9 @@ export const CLIENT_LINKS: WorkspaceLink[] = [
 const RESTAURANT_NAV = ['/home', '/daily', '/orders', '/service', '/drinks', '/restaurant', '/kitchen', '/messages'];
 const OWNER_RESTAURANT = ['/daily', '/orders', '/service', '/drinks', '/restaurant', '/kitchen'];
 
-export function linksFor(role?: string | null) {
+export function linksFor(role?: string | null): WorkspaceLink[] {
   if (!isStaffRole(role)) return [];
-  const links = WORKSPACE_LINKS.filter((item) => item.roles.includes(role)).map((item) =>
+  const links: WorkspaceLink[] = WORKSPACE_LINKS.filter((item) => item.roles.includes(role)).map((item) =>
     item.href === '/issues' && role === 'housekeeping'
       ? { ...item, label: 'Mes signalements' }
       : item.href === '/reports' && role === 'receptionist'
@@ -71,7 +79,7 @@ export function linksFor(role?: string | null) {
         : item.href === '/home' && role === 'restaurant'
             ? { ...item, label: 'Accueil' }
             : item.href === '/restaurant' && role === 'owner'
-              ? { ...item, label: 'Restaurant', icon: 'restaurant' }
+              ? { ...item, label: 'Restaurant', icon: 'restaurant' as const }
               : item,
   );
   if (role === 'owner') {

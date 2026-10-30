@@ -624,6 +624,21 @@ async function ensurePmsSchema(db) {
     await db.run('INSERT INTO product_categories (name, active) VALUES (?, 1)', [name]);
     knownNames.add(name.toLowerCase());
   }
+  await addColumn(db, 'notifications', 'roles', 'TEXT');
+  await addColumn(db, 'notifications', 'user_id', 'INTEGER');
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS notification_reads (
+      notification_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      read_at TEXT NOT NULL
+    )`,
+  );
+  const { rolesForNotice } = require('./notify');
+  const noticeRows = await db.all('SELECT id, category, title, roles FROM notifications');
+  for (const row of noticeRows) {
+    if (String(row.roles || '').trim()) continue;
+    await db.run('UPDATE notifications SET roles = ? WHERE id = ?', [rolesForNotice(row.category, row.title).join(','), row.id]);
+  }
   await addColumn(db, 'menu_items', 'stock', 'INTEGER NOT NULL DEFAULT 20');
   await addColumn(db, 'menu_items', 'min_stock', 'INTEGER NOT NULL DEFAULT 5');
   await addColumn(db, 'menu_items', 'of_day', 'INTEGER NOT NULL DEFAULT 0');
@@ -775,6 +790,115 @@ async function ensurePmsSchema(db) {
       await db.run('INSERT INTO restaurant_order_items (order_id, name, qty, price) VALUES (?,?,?,?)', [orderId, line[0], line[1], line[2]]);
     }
   }
+  await addColumn(db, 'restaurant_orders', 'table_number', 'TEXT');
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS menu_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'food',
+      active INTEGER NOT NULL DEFAULT 1
+    )`,
+  );
+  const foodDefaults = ['Entrée', 'Plat', 'Dessert', 'Petit-déjeuner'];
+  const drinkDefaults = ['Eau', 'Jus', 'Bière', 'Alcool', 'Chaud', 'Boisson'];
+  const knownMenuCats = await db.all('SELECT id, name, kind FROM menu_categories');
+  const knownMenuNames = new Set(knownMenuCats.map((row) => String(row.name || '').trim().toLowerCase()));
+  for (const name of foodDefaults) {
+    if (knownMenuNames.has(name.toLowerCase())) continue;
+    await db.run("INSERT INTO menu_categories (name, kind, active) VALUES (?, 'food', 1)", [name]);
+    knownMenuNames.add(name.toLowerCase());
+  }
+  for (const name of drinkDefaults) {
+    if (knownMenuNames.has(name.toLowerCase())) continue;
+    await db.run("INSERT INTO menu_categories (name, kind, active) VALUES (?, 'drink', 1)", [name]);
+    knownMenuNames.add(name.toLowerCase());
+  }
+  const drinkSet = new Set(drinkDefaults.map((name) => name.toLowerCase()));
+  const usedCats = await db.all("SELECT DISTINCT category AS name FROM menu_items WHERE IFNULL(category, '') <> ''");
+  for (const row of usedCats) {
+    const name = String(row.name || '').trim();
+    if (!name || knownMenuNames.has(name.toLowerCase())) continue;
+    const kind = drinkSet.has(name.toLowerCase()) ? 'drink' : 'food';
+    await db.run('INSERT INTO menu_categories (name, kind, active) VALUES (?, ?, 1)', [name, kind]);
+    knownMenuNames.add(name.toLowerCase());
+  }
+  const menuPhotos = {
+    'Pain perdu à la vanille': 'https://images.unsplash.com/photo-1484723091739-30a097e8f929?w=900&q=80',
+    'Omelette du chef': 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=900&q=80',
+    'Salade d’avocat': 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=900&q=80',
+    'Soupe de poisson': 'https://images.unsplash.com/photo-1476718406336-bb5a9690ee2a?w=900&q=80',
+    'Poulet braisé attiéké': 'https://images.unsplash.com/photo-1532550907401-a532c00947da?w=900&q=80',
+    'Filet de capitaine': 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=900&q=80',
+    'Risotto aux champignons': 'https://images.unsplash.com/photo-1476124369491-e7addf5db371?w=900&q=80',
+    'Tarte chocolat': 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=900&q=80',
+    'Ananas flambé': 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=900&q=80',
+    'Jus bissap': 'https://images.unsplash.com/photo-1546173159-315724a31696?w=900&q=80',
+    'Café MyHotel': 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=900&q=80',
+    'Cocktail Coco Sunset': 'https://images.unsplash.com/photo-1536935338788-846bb9981813?w=900&q=80',
+    Alloco: 'https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?w=900&q=80',
+    'Salade d’attiéké': 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=900&q=80',
+    Pastels: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=900&q=80',
+    'Brochettes de bœuf': 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=900&q=80',
+    Thiéboudienne: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=900&q=80',
+    'Yassa poulet': 'https://images.unsplash.com/photo-1598103442097-8b7046f8c1ac?w=900&q=80',
+    Mafé: 'https://images.unsplash.com/photo-1547592180-85f173990554?w=900&q=80',
+    Kédjénou: 'https://images.unsplash.com/photo-1604908177522-402487206631?w=900&q=80',
+    Garba: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&q=80',
+    'Placali sauce graine': 'https://images.unsplash.com/photo-1574484284002-952d92456975?w=900&q=80',
+    'Poisson braisé': 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=900&q=80',
+    'Sauce gombo': 'https://images.unsplash.com/photo-1546548970-71785318a17b?w=900&q=80',
+    'Riz gras': 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=900&q=80',
+    'Foufou sauce arachide': 'https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?w=900&q=80',
+    Dèguè: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=900&q=80',
+    Thiakry: 'https://images.unsplash.com/photo-1551024506-0bccd828d307?w=900&q=80',
+    'Beignets de banane': 'https://images.unsplash.com/photo-1506086679524-493c64fdf924?w=900&q=80',
+    'Bouillie de mil': 'https://images.unsplash.com/photo-1495214783159-3503fd1b572d?w=900&q=80',
+    'Galette d’arachide': 'https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e?w=900&q=80',
+    'Eau minérale': 'https://images.unsplash.com/photo-1548839140-29a972e1dba1?w=900&q=80',
+    'Eau gazeuse': 'https://images.unsplash.com/photo-1523362628745-0c100150b504?w=900&q=80',
+    'Jus d’ananas': 'https://images.unsplash.com/photo-1544145945-f9049c45e1aa?w=900&q=80',
+    'Jus de mangue': 'https://images.unsplash.com/photo-1546173159-315724a31696?w=900&q=80',
+    'Jus de gingembre': 'https://images.unsplash.com/photo-1505252585461-04db1eb84625?w=900&q=80',
+    'Jus de bouye': 'https://images.unsplash.com/photo-1623065424907-0233a16afd90?w=900&q=80',
+    'Orange pressée': 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=900&q=80',
+    Flag: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?w=900&q=80',
+    Castel: 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=900&q=80',
+    Beaufort: 'https://images.unsplash.com/photo-1618885472179-5e6741966b0d?w=900&q=80',
+    Guinness: 'https://images.unsplash.com/photo-1571613316887-6f8d5cbf7ef7?w=900&q=80',
+    Heineken: 'https://images.unsplash.com/photo-1618183479302-1e0aa382c36b?w=900&q=80',
+    Desperados: 'https://images.unsplash.com/photo-1436076863939-06870fe779c2?w=900&q=80',
+    'Vin de palme': 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=900&q=80',
+    'Punch coco': 'https://images.unsplash.com/photo-1536935338788-846bb9981813?w=900&q=80',
+    'Vin rouge': 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=900&q=80',
+    'Vin blanc': 'https://images.unsplash.com/photo-1553361371-9b22f78e8b1d?w=900&q=80',
+    'Thé à la menthe': 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=900&q=80',
+    'Café Touba': 'https://images.unsplash.com/photo-1511920170033-f8396924c348?w=900&q=80',
+    'Chocolat chaud': 'https://images.unsplash.com/photo-1542990253-0d0f5be5f0ed?w=900&q=80',
+  };
+  const photoByKind = {
+    Entrée: 'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=900&q=80',
+    Plat: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=900&q=80',
+    Dessert: 'https://images.unsplash.com/photo-1551024506-0bccd828d307?w=900&q=80',
+    'Petit-déjeuner': 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=900&q=80',
+    Eau: 'https://images.unsplash.com/photo-1548839140-29a972e1dba1?w=900&q=80',
+    Jus: 'https://images.unsplash.com/photo-1546173159-315724a31696?w=900&q=80',
+    Bière: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?w=900&q=80',
+    Alcool: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=900&q=80',
+    Chaud: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=900&q=80',
+    Boisson: 'https://images.unsplash.com/photo-1544145945-f9049c45e1aa?w=900&q=80',
+  };
+  const foodFallback = 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&q=80';
+  const drinkFallback = 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=900&q=80';
+  const photoIndex = new Map(Object.entries(menuPhotos).map(([name, url]) => [name.replace(/['’]/g, "'").toLowerCase(), url]));
+  const menuRows = await db.all('SELECT id, name, category, photo FROM menu_items');
+  for (const row of menuRows) {
+    if (String(row.photo || '').trim()) continue;
+    const name = String(row.name || '').trim();
+    const category = String(row.category || '').trim();
+    const drink = drinkSet.has(category.toLowerCase());
+    const photo = photoIndex.get(name.replace(/['’]/g, "'").toLowerCase()) || photoByKind[category] || (drink ? drinkFallback : foodFallback);
+    await db.run('UPDATE menu_items SET photo = ? WHERE id = ?', [photo, row.id]);
+  }
   await db.run(
     `CREATE TABLE IF NOT EXISTS room_maintenance (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -867,7 +991,7 @@ async function ensurePmsSchema(db) {
         'MyHotel',
         'MyHotel SARL',
         'Boulevard de la République',
-        'Douala',
+        'Bertoua',
         'Cameroun',
         '+237 6 00 00 00 00',
         'contact@myhotel.cm',
@@ -878,6 +1002,18 @@ async function ensurePmsSchema(db) {
       ],
     );
   }
+  await db.run("UPDATE company_profile SET city = 'Bertoua' WHERE id = 1");
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS visit_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      at TEXT NOT NULL
+    )`,
+  );
   await seedNotifications(db);
   await seedWorkspace(db);
 }
@@ -1114,15 +1250,32 @@ async function ensureHotelProducts(db) {
       ['Sacs poubelle', 'interne', 'paquet', 6, 4, 1200, 0, 'LOT-POU'],
       ['Ampoules', 'interne', 'u', 0, 8, 600, 0, 'LOT-AMP'],
     ];
+    const photos = {
+      'Préservatifs': 'https://images.unsplash.com/photo-1583947581924-860bda6a26df?w=900&q=80',
+      'Eau minérale 50cl': 'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=900&q=80',
+      'Eau minérale 1.5L': 'https://images.unsplash.com/photo-1559839914-17aae19ce22f?w=900&q=80',
+      'Coca-Cola 33cl': 'https://images.unsplash.com/photo-1629203851122-3726ecdf080e?w=900&q=80',
+      'Jus d’orange 33cl': 'https://images.unsplash.com/photo-1600271886742-f049cd3b7da8?w=900&q=80',
+      'Bière 33cl': 'https://images.unsplash.com/photo-1608270586620-248524c67de9?w=900&q=80',
+      'Savon de toilette': 'https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=900&q=80',
+      'Brosse à dents': 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?w=900&q=80',
+      'Dentifrice': 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=900&q=80',
+      'Rasoir jetable': 'https://images.unsplash.com/photo-1621607512214-68297480065f?w=900&q=80',
+      'Peigne': 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=900&q=80',
+      'Chips': 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=900&q=80',
+      'Carte postale': 'https://images.unsplash.com/photo-1455390582262-044cdead277a?w=900&q=80',
+    };
     for (const row of catalog) {
+      const photo = photos[row[0]] || null;
       const existing = await db.get('SELECT id FROM products WHERE name = ?', [row[0]]);
       if (existing) {
-        await db.run('UPDATE products SET kind=?, unit=? WHERE id=?', [row[1], row[2], existing.id]);
+        await db.run('UPDATE products SET kind=?, unit=? WHERE name=?', [row[1], row[2], row[0]]);
+        if (photo) await db.run('UPDATE products SET photo=? WHERE name=?', [photo, row[0]]);
         continue;
       }
       await db.run(
-        'INSERT INTO products (name, category, unit, stock, min_stock, cost, price, warehouse_id, lot, kind) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        [row[0], row[1] === 'vente' ? 'Accueil' : 'Magasin', row[2], row[3], row[4], row[5], row[6], wid, row[7], row[1]],
+        'INSERT INTO products (name, category, unit, stock, min_stock, cost, price, warehouse_id, lot, kind, photo) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        [row[0], row[1] === 'vente' ? 'Accueil' : 'Magasin', row[2], row[3], row[4], row[5], row[6], wid, row[7], row[1], photo],
       );
     }
   } catch {

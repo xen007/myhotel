@@ -15,6 +15,7 @@ type Order = {
   guest_name: string;
   guest_phone?: string | null;
   room_number?: string | null;
+  table_number?: string | null;
   mode: string;
   pay: string;
   status: string;

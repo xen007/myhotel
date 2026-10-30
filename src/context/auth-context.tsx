@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { loginRequest, logoutRequest, meRequest, registerRequest, updatePasswordRequest, updateProfileRequest, type ApiUser } from '@/lib/api';
+import { loginRequest, logoutRequest, meRequest, registerRequest, updatePasswordRequest, updateProfileRequest, type ApiUser, type AuthPayload } from '@/lib/api';
 import { getItem, removeItem, setItem } from '@/lib/storage';
 
 const TOKEN_KEY = 'myhotel.auth.token';
@@ -10,13 +10,13 @@ type AuthContextValue = {
   user: ApiUser | null;
   token: string | null;
   ready: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<AuthPayload>;
   register: (payload: {
     full_name: string;
     email: string;
     phone?: string;
     password: string;
-  }) => Promise<void>;
+  }) => Promise<AuthPayload>;
   logout: () => Promise<void>;
   updateProfile: (payload: { full_name?: string; photo?: string | null }) => Promise<void>;
   updatePassword: (payload: { current_password: string; new_password: string }) => Promise<void>;
@@ -92,12 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await persistSession(payload.token, payload.user);
         setToken(payload.token);
         setUser(payload.user);
+        return payload;
       },
       async register(input) {
         const payload = await registerRequest(input);
         await persistSession(payload.token, payload.user);
         setToken(payload.token);
         setUser(payload.user);
+        return payload;
       },
       async logout() {
         const current = token;

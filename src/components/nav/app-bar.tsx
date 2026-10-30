@@ -11,6 +11,7 @@ type AppBarProps = {
   onNotifications: () => void;
   onProfile: () => void;
   showBrand?: boolean;
+  actionsOnly?: boolean;
   notificationsOpen?: boolean;
   profileOpen?: boolean;
   unread?: number;
@@ -20,6 +21,7 @@ export function AppBar({
   onNotifications,
   onProfile,
   showBrand = true,
+  actionsOnly = false,
   notificationsOpen,
   profileOpen,
   unread = 0,
@@ -27,14 +29,14 @@ export function AppBar({
   const { user } = useAuth();
 
   return (
-    <View style={styles.bar}>
-      {showBrand ? (
+    <View style={[styles.bar, actionsOnly && styles.barActions]}>
+      {showBrand && !actionsOnly ? (
         <View style={styles.brand}>
           <BrandMark size={32} />
           <Text style={styles.name}>{Brand.name}</Text>
         </View>
-      ) : (
-        <Text style={styles.pageHint}>{user?.full_name?.split(' ')[0]}</Text>
+      ) : actionsOnly ? null : (
+        <View />
       )}
       <View style={styles.actions}>
         <Pressable
@@ -68,6 +70,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(20,22,34,0.06)',
   },
+  barActions: {
+    borderBottomWidth: 0,
+    minHeight: 52,
+    paddingHorizontal: 10,
+    flexShrink: 0,
+  },
   brand: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -79,12 +87,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.4,
-  },
-  pageHint: {
-    color: Palette.ink,
-    opacity: 0.45,
-    fontWeight: '600',
-    fontSize: 13,
   },
   actions: {
     flexDirection: 'row',

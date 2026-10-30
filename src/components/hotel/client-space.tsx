@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { createElement, useEffect, useMemo, useState } from 'react';
+import { createElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon, type BoxIconName } from '@/components/box-icon';
@@ -10,8 +10,9 @@ import { GoldBtn } from '@/components/hotel/kit';
 import { Breakpoints, Palette, Radius } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { usePms } from '@/hooks/use-pms';
-import { pmsGet, pmsPost } from '@/lib/api';
+import { pmsGet, pmsPost, visitGet } from '@/lib/api';
 import { money, prettyChatTime, prettyStamp, prettyWhen, roomStatusLabel } from '@/lib/format';
+import { takeVisitBook } from '@/lib/visit-intent';
 
 type Gear = { id: number; name: string; category: string; icon: string };
 
@@ -61,7 +62,8 @@ type Order = {
 };
 type DeskNote = { id: number; body: string; mine: boolean; at: string };
 type Charge = { id: number; reservation_id: number; source: string; label: string; amount: number; at: string; settled_at?: string | null };
-type Payload = { rooms: Room[]; menu: Dish[]; stays: Stay[]; here: Stay | null; orders: Order[]; cleaning?: boolean; charges?: Charge[] };
+type MenuCategory = { id: number; name: string; kind: string; active?: number };
+type Payload = { rooms: Room[]; menu: Dish[]; stays: Stay[]; here: Stay | null; orders: Order[]; cleaning?: boolean; charges?: Charge[]; categories?: MenuCategory[] };
 
 type TabId = (typeof TABS)[number]['id'];
 
@@ -129,7 +131,7 @@ function roomTone(status: string): 'gold' | 'ink' | 'muted' {
   return 'muted';
 }
 
-export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { count: number; open: () => void }) => void }) {
+export function ClientSpace({ view, onCart, preview }: { view?: TabId; onCart?: (cart: { count: number; open: () => void }) => void; preview?: boolean }) {
   const router = useRouter();
   const { token, user } = useAuth();
   const { width, height } = useWindowDimensions();
@@ -140,14 +142,15 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
   const [room, setRoom] = useState<Room | null>(null);
   const [visit, setVisit] = useState<Room | null>(null);
   const [visitLoading, setVisitLoading] = useState(false);
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [documentId, setDocumentId] = useState('');
   const [checkIn, setCheckIn] = useState(ymd());
   const [checkOut, setCheckOut] = useState(ymd(new Date(Date.now() + 86400000)));
   const [checkInTime, setCheckInTime] = useState('14:00');
   const [checkOutTime, setCheckOutTime] = useState('12:00');
   const [cart, setCart] = useState<Record<number, number>>({});
-  const [mode, setMode] = useState<'chambre' | 'salle'>('chambre');
+  const [mode, setMode] = useState<'chambre' | 'salle'>('salle');
+  const [place, setPlace] = useState('');
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -163,19 +166,24 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
   const [cartOpen, setCartOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [desk, setDesk] = useState<DeskNote[]>([]);
+  const bookTaken = useRef(false);
   const wide = width >= Breakpoints.tablet;
   const cols = width >= Breakpoints.desktop ? 4 : wide ? 3 : 2;
 
   async function load() {
+    if (preview) {
+      const payload = await visitGet<Payload>('visit');
+      setData(payload);
+      return;
+    }
     if (!token) return;
     const payload = await pmsGet<Payload>(token, 'guest');
     setData(payload);
   }
 
   useEffect(() => {
-    if (!token) return;
+    if (!preview && !token) return;
     let alive = true;
-    setLoading(true);
     load()
       .catch((err) => {
         if (alive) setError(err instanceof Error ? err.message : 'Espace client indisponible.');
@@ -186,14 +194,42 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
     return () => {
       alive = false;
     };
-  }, [token]);
+  }, [token, preview]);
 
   useEffect(() => {
     if (view) setTab(view);
   }, [view]);
 
+  useEffect(() => {
+    if (user?.phone) setPhone(user.phone);
+  }, [user?.phone]);
+
+  useEffect(() => {
+    if (preview || !token || !data?.rooms?.length || bookTaken.current) return;
+    bookTaken.current = true;
+    void takeVisitBook().then((intent) => {
+      if (!intent) return;
+      const item = data.rooms.find((row) => row.id === intent.roomId);
+      if (!item) return;
+      setCheckIn(intent.checkIn);
+      setCheckOut(intent.checkOut);
+      setCheckInTime(intent.checkInTime);
+      setCheckOutTime(intent.checkOutTime);
+      setTab('rooms');
+      setRoom(item);
+    });
+  }, [preview, token, data]);
+
   const menu = data?.menu ?? [];
-  const dishKinds = useMemo(() => ['all', ...new Set(menu.map((dish) => dish.category))], [menu]);
+  const menuCategories = useMemo(
+    () => (data?.categories ?? []).filter((row) => Number(row.active ?? 1) === 1),
+    [data?.categories],
+  );
+  const dishKinds = useMemo(() => {
+    const named = menuCategories.map((item) => item.name).filter((name) => menu.some((dish) => dish.category === name));
+    const extras = [...new Set(menu.map((dish) => dish.category))].filter((name) => !named.includes(name));
+    return ['all', ...named, ...extras];
+  }, [menu, menuCategories]);
   const groups = useMemo(() => {
     const needle = dishQuery.trim().toLowerCase();
     const map = new Map<string, Dish[]>();
@@ -204,13 +240,13 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
       list.push(dish);
       map.set(dish.category, list);
     });
-    const order = ['Entrée', 'Plat', 'Petit-déjeuner', 'Dessert', 'Eau', 'Jus', 'Bière', 'Alcool', 'Chaud', 'Boisson'];
+    const order = menuCategories.map((item) => item.name);
     return [...map.entries()].sort((a, b) => {
       const left = order.indexOf(a[0]);
       const right = order.indexOf(b[0]);
       return (left < 0 ? 99 : left) - (right < 0 ? 99 : right);
     });
-  }, [menu, dishQuery, dishKind]);
+  }, [menu, dishQuery, dishKind, menuCategories]);
   const lines = menu.filter((dish) => (cart[dish.id] || 0) > 0).map((dish) => ({ dish, qty: cart[dish.id] }));
   const cartTotal = lines.reduce((sum, line) => sum + line.qty * Number(line.dish.price || 0), 0);
   const cartCount = lines.reduce((sum, line) => sum + line.qty, 0);
@@ -289,6 +325,10 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
   }
 
   function reserve(item: Room) {
+    if (preview) {
+      router.push('/login');
+      return;
+    }
     if (!item.bookable) {
       setNotice('Indisponible.');
       return;
@@ -304,12 +344,12 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
   }
 
   async function openVisit(item: Room) {
-    if (!token) return;
+    if (!preview && !token) return;
     setVisit(item);
     setVisitLoading(true);
     setNotice(null);
     try {
-      const detail = await pmsGet<Room>(token, `guest/room?id=${item.id}`);
+      const detail = preview ? await visitGet<Room>(`visit/room?id=${item.id}`) : await pmsGet<Room>(token as string, `guest/room?id=${item.id}`);
       setVisit({ ...item, ...detail });
     } catch (err) {
       setNotice(err instanceof Error ? err.message : 'Chambre indisponible.');
@@ -361,7 +401,9 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
     setNotice(null);
     try {
       const result = await pmsPost<{ id: number }>(token, 'guest/order', {
-        mode,
+        mode: mode === 'chambre' && data?.here ? 'chambre' : 'salle',
+        place: place.trim(),
+        table_number: place.trim(),
         items: lines.map((line) => ({ id: line.dish.id, qty: line.qty })),
       });
       setCart({});
@@ -380,7 +422,7 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
 
   return (
     <View style={styles.flex}>
-    <ScrollView style={styles.flex} contentContainerStyle={[styles.page, view ? styles.pageInShell : null, tab === 'desk' ? styles.pageDesk : null]}>
+    <ScrollView style={styles.flex} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.page, view ? styles.pageInShell : null, tab === 'desk' ? styles.pageDesk : null]}>
       {view ? null : (
         <>
           <View style={styles.helloRow}>
@@ -443,7 +485,7 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
               </View>
             ))}
             {!(visit.equipment ?? []).length ? <Text style={styles.meta}>Aucun équipement.</Text> : null}
-            <GoldBtn icon="calendar" label="Réserver" onPress={() => reserve(visit)} />
+            <GoldBtn icon="calendar" label={preview ? 'Se connecter pour réserver' : 'Réserver'} onPress={() => reserve(visit)} />
           </View>
         </View>
       ) : null}
@@ -548,7 +590,6 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
 
       {tab === 'table' ? (
         <View style={styles.stack}>
-          {!data?.here ? <Text style={styles.notice}>Le panier se prépare tout de suite. L’envoi s’ouvre à votre arrivée.</Text> : null}
           <View style={styles.search}>
             <AppIcon name="search" size={16} color={Palette.ink} />
             <TextInput value={dishQuery} onChangeText={setDishQuery} placeholder="Rechercher un plat..." placeholderTextColor="rgba(20,22,34,0.45)" style={styles.searchInput} />
@@ -576,7 +617,13 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
                         <Text style={styles.type} numberOfLines={1}>{dish.name}</Text>
                         {dish.description ? <Text style={styles.meta} numberOfLines={2}>{dish.description}</Text> : null}
                         <Text style={styles.roomPrice}>{money(dish.price)}</Text>
-                        <GoldBtn block tiny icon="cart" label={qty ? `Ajouter · ${qty}` : 'Ajouter'} onPress={() => setCart((current) => ({ ...current, [dish.id]: (current[dish.id] || 0) + 1 }))} />
+                        <GoldBtn
+                          block
+                          tiny
+                          icon={preview ? 'user' : 'cart'}
+                          label={preview ? 'Se connecter' : qty ? `Ajouter · ${qty}` : 'Ajouter'}
+                          onPress={() => (preview ? router.push('/login') : setCart((current) => ({ ...current, [dish.id]: (current[dish.id] || 0) + 1 })))}
+                        />
                       </View>
                     </View>
                   );
@@ -584,7 +631,7 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
               </View>
             </View>
           ))}
-          {!menu.length ? <Text style={styles.lead}>Le menu du jour n’est pas encore publié.</Text> : null}
+          {!menu.length ? <Text style={styles.lead}>Aucun plat n’est disponible pour le moment.</Text> : null}
           {menu.length && !groups.length ? <Text style={styles.meta}>Aucun plat ne correspond.</Text> : null}
         </View>
       ) : null}
@@ -593,16 +640,7 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
 
       {tab === 'stay' ? (
         <View style={styles.stack}>
-          {(data?.stays ?? []).map((stay) => (
-            <View key={stay.id} style={styles.history}>
-              {stay.room_photo ? <Image source={{ uri: stay.room_photo }} style={styles.historyPhoto} contentFit="cover" /> : <View style={styles.historyPhoto} />}
-              <View style={styles.cartCopy}>
-                <Text style={styles.name}>Chambre {stay.room_number}</Text>
-                <Text style={styles.meta}>{stay.room_type || 'Séjour'} · {prettyWhen(stay.check_in, stay.check_in_time)} → {prettyWhen(stay.check_out, stay.check_out_time)}</Text>
-                <Text style={styles.meta}>{STAY_LABEL[stay.status] || stay.status} · {money(stay.total)}</Text>
-              </View>
-            </View>
-          ))}
+          {(data?.stays ?? []).map((stay) => <StayCard key={stay.id} stay={stay} />)}
           {!data?.stays.length ? <Text style={styles.lead}>Aucun séjour pour ce compte.</Text> : null}
         </View>
       ) : null}
@@ -616,7 +654,7 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
               <Text style={styles.name}>Panier</Text>
               <GoldBtn compact icon="x-circle" label="Fermer" variant="ghost" onPress={() => setCartOpen(false)} />
             </View>
-            <ScrollView style={styles.cartList} contentContainerStyle={styles.stack}>
+            <ScrollView style={styles.cartList} contentContainerStyle={styles.stack} showsVerticalScrollIndicator={false}>
               {lines.map((line) => (
                 <View key={line.dish.id} style={styles.cartRow}>
                   <View style={styles.cartCopy}>
@@ -637,20 +675,24 @@ export function ClientSpace({ view, onCart }: { view?: TabId; onCart?: (cart: { 
               {!lines.length ? <Text style={styles.meta}>Touchez un plat pour l’ajouter.</Text> : null}
             </ScrollView>
             <View style={styles.tabs}>
-              <Pressable onPress={() => setMode('chambre')} style={[styles.tab, mode === 'chambre' && styles.tabOn]}><Text style={styles.tabText}>Sur la note</Text></Pressable>
-              <Pressable onPress={() => setMode('salle')} style={[styles.tab, mode === 'salle' && styles.tabOn]}><Text style={styles.tabText}>En salle · espèces</Text></Pressable>
+              {data?.here ? (
+                <Pressable onPress={() => setMode('chambre')} style={[styles.tab, mode === 'chambre' && styles.tabOn]}><Text style={styles.tabText}>Sur la note</Text></Pressable>
+              ) : null}
+              <Pressable onPress={() => setMode('salle')} style={[styles.tab, mode === 'salle' && styles.tabOn]}><Text style={styles.tabText}>Sur place</Text></Pressable>
             </View>
-            {!data?.here ? <Text style={styles.notice}>La commande part à la réception dès que le séjour a commencé.</Text> : null}
+            {mode === 'salle' || !data?.here ? (
+              <TextInput value={place} onChangeText={setPlace} placeholder="Lieu : table 7, terrasse, lobby…" placeholderTextColor="rgba(20,22,34,0.45)" style={styles.input} />
+            ) : null}
             {notice ? <Text style={styles.notice}>{notice}</Text> : null}
             <View style={styles.helloRow}>
               <Text style={styles.price}>{money(cartTotal)}</Text>
               <GoldBtn
                 compact
-                icon={mode === 'chambre' ? 'bed' : 'wallet'}
-                label={saving ? 'Envoi…' : !data?.here ? 'À l’arrivée' : mode === 'chambre' ? 'Ajouter à la note' : 'Commander'}
+                icon={mode === 'chambre' && data?.here ? 'bed' : 'wallet'}
+                label={saving ? 'Envoi…' : mode === 'chambre' && data?.here ? 'Ajouter à la note' : 'Commander'}
                 onPress={() => {
-                  if (!data?.here) {
-                    setNotice('La commande s’envoie dès que le séjour a commencé.');
+                  if ((mode === 'salle' || !data?.here) && place.trim().length < 2) {
+                    setNotice('Indiquez le lieu de la commande.');
                     return;
                   }
                   void order();
@@ -690,72 +732,162 @@ function whenLabel(value?: string | null) {
   return prettyStamp(value);
 }
 
+function StayCard({ stay }: { stay: Stay }) {
+  return (
+    <View style={styles.stayCard}>
+      {stay.room_photo ? (
+        <Image source={{ uri: stay.room_photo }} style={styles.stayPhoto} contentFit="cover" />
+      ) : (
+        <View style={[styles.stayPhoto, styles.stayPhotoEmpty]}>
+          <AppIcon name="bed" size={22} color={Palette.gold} />
+        </View>
+      )}
+      <View style={styles.stayCopy}>
+        <View style={styles.stayHead}>
+          <Text style={styles.stayTitle}>Chambre {stay.room_number}</Text>
+          <View style={styles.stayBadge}>
+            <Text style={styles.stayBadgeText}>{STAY_LABEL[stay.status] || stay.status}</Text>
+          </View>
+        </View>
+        <Text style={styles.meta}>{stay.room_type || 'Séjour'}</Text>
+        <Text style={styles.meta}>{prettyWhen(stay.check_in, stay.check_in_time)} → {prettyWhen(stay.check_out, stay.check_out_time)}</Text>
+        <Text style={styles.stayPrice}>{money(stay.total)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function NoteThumb({ uri, icon }: { uri?: string | null; icon: BoxIconName }) {
+  if (uri) return <Image source={{ uri }} style={styles.noteThumb} contentFit="cover" />;
+  return (
+    <View style={[styles.noteThumb, styles.stayPhotoEmpty]}>
+      <AppIcon name={icon} size={18} color={Palette.gold} />
+    </View>
+  );
+}
+
 function ClientNote({ data }: { data: Payload | null }) {
   const here = data?.here && data.here.status !== 'terminee' && data.here.status !== 'annulee' ? data.here : null;
-  const orders = (data?.orders ?? []).filter((row) => row.pay === 'note' && row.status !== 'reglee' && (!here || !row.reservation_id || Number(row.reservation_id) === Number(here.id)));
+  const photos = useMemo(() => {
+    const map = new Map<string, string>();
+    (data?.menu ?? []).forEach((dish) => {
+      if (dish.photo) map.set(dish.name.trim().toLowerCase(), dish.photo);
+    });
+    return map;
+  }, [data?.menu]);
+  const openOrders = (data?.orders ?? []).filter((row) => row.pay === 'note' && row.status !== 'reglee' && (!here || !row.reservation_id || Number(row.reservation_id) === Number(here.id)));
+  const paidOrders = (data?.orders ?? []).filter((row) => !openOrders.some((open) => open.id === row.id)).slice(0, 8);
   const charges = (data?.charges ?? []).filter((row) => {
     if (row.settled_at || row.source === 'hebergement') return false;
     if (here && Number(row.reservation_id) !== Number(here.id)) return false;
     if (row.source !== 'restaurant') return true;
-    return !orders.some((order) => Number(order.reservation_id) === Number(row.reservation_id) && Math.abs(Number(order.total) - Number(row.amount)) < 1);
+    return !openOrders.some((order) => Number(order.reservation_id) === Number(row.reservation_id) && Math.abs(Number(order.total) - Number(row.amount)) < 1);
   });
   const lodging = here ? Number(here.total || 0) : 0;
-  const extras = charges.reduce((sum, row) => sum + Number(row.amount || 0), 0) + orders.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const extras = charges.reduce((sum, row) => sum + Number(row.amount || 0), 0) + openOrders.reduce((sum, row) => sum + Number(row.total || 0), 0);
   const total = lodging + extras;
-  const empty = !here && !charges.length && !orders.length;
+  const empty = !here && !charges.length && !openOrders.length;
 
   return (
-    <View style={styles.panel}>
-      <Text style={styles.panelTitle}>Note à régler</Text>
-      {empty ? <Text style={styles.meta}>Aucune facture ouverte. Les repas et boissons notés sur la chambre apparaissent ici.</Text> : null}
-      {here ? (
-        <View style={styles.line}>
-          <View style={styles.cartCopy}>
-            <Text style={styles.lineLabel}>Chambre {here.room_number} · hébergement</Text>
-            <Text style={styles.meta}>{prettyWhen(here.check_in, here.check_in_time)} → {prettyWhen(here.check_out, here.check_out_time)}</Text>
-          </View>
-          <Text style={styles.lineValue}>{money(here.total)}</Text>
+    <View style={styles.folio}>
+      <View style={styles.folioHead}>
+        <Text style={styles.folioKicker}>Folio client</Text>
+        <Text style={styles.folioTitle}>{here ? `Chambre ${here.room_number}` : 'Note ouverte'}</Text>
+        <Text style={styles.folioMeta}>{here ? `${prettyWhen(here.check_in, here.check_in_time)} → ${prettyWhen(here.check_out, here.check_out_time)}` : 'Hébergement et restaurant à régler à la réception'}</Text>
+      </View>
+
+      {empty ? (
+        <View style={styles.noteEmpty}>
+          <AppIcon name="receipt" size={28} color={Palette.gold} />
+          <Text style={styles.lead}>Aucune ligne ouverte. Les repas notés sur la chambre apparaissent ici.</Text>
         </View>
       ) : null}
-      {charges.map((row) => (
-        <View key={row.id} style={styles.line}>
-          <View style={styles.cartCopy}>
-            <Text style={styles.lineLabel}>{row.label}</Text>
-            <Text style={styles.meta}>{whenLabel(row.at)}</Text>
+
+      {here ? (
+        <View style={styles.noteBlock}>
+          <Text style={styles.noteBlockTitle}>Hébergement</Text>
+          <View style={styles.noteItem}>
+            <NoteThumb uri={here.room_photo} icon="bed" />
+            <View style={styles.cartCopy}>
+              <Text style={styles.lineLabel}>Chambre {here.room_number} · {here.room_type || 'Séjour'}</Text>
+              <Text style={styles.meta}>{prettyWhen(here.check_in, here.check_in_time)} → {prettyWhen(here.check_out, here.check_out_time)}</Text>
+            </View>
+            <Text style={styles.lineValue}>{money(here.total)}</Text>
           </View>
-          <Text style={styles.lineValue}>{money(row.amount)}</Text>
         </View>
-      ))}
-      {orders.map((row) => (
-        <View key={row.id} style={styles.stack}>
-          {(row.items ?? []).map((line, index) => (
-            <View key={`${row.id}-${index}`} style={styles.line}>
+      ) : null}
+
+      {charges.length ? (
+        <View style={styles.noteBlock}>
+          <Text style={styles.noteBlockTitle}>Prestations</Text>
+          {charges.map((row) => (
+            <View key={row.id} style={styles.noteItem}>
+              <NoteThumb icon="receipt" />
               <View style={styles.cartCopy}>
-                <Text style={styles.lineLabel}>{line.name} ×{line.qty}</Text>
-                <Text style={styles.meta}>{whenLabel(row.at)}{row.room_number ? ` · Ch. ${row.room_number}` : ''}</Text>
+                <Text style={styles.lineLabel}>{row.label}</Text>
+                <Text style={styles.meta}>{whenLabel(row.at)}</Text>
               </View>
-              <Text style={styles.lineValue}>{money(line.qty * Number(line.price || 0))}</Text>
+              <Text style={styles.lineValue}>{money(row.amount)}</Text>
             </View>
           ))}
-          {!(row.items ?? []).length ? (
-            <View style={styles.line}>
-              <Text style={styles.lineLabel}>Restaurant</Text>
-              <Text style={styles.lineValue}>{money(row.total)}</Text>
-            </View>
-          ) : null}
         </View>
-      ))}
+      ) : null}
+
+      {openOrders.length ? (
+        <View style={styles.noteBlock}>
+          <Text style={styles.noteBlockTitle}>Restaurant</Text>
+          {openOrders.map((row) => (
+            <View key={row.id} style={styles.noteOrder}>
+              {(row.items ?? []).map((line, index) => (
+                <View key={`${row.id}-${index}`} style={styles.noteItem}>
+                  <NoteThumb uri={photos.get(String(line.name || '').trim().toLowerCase())} icon="restaurant" />
+                  <View style={styles.cartCopy}>
+                    <Text style={styles.lineLabel}>{line.name} ×{line.qty}</Text>
+                    <Text style={styles.meta}>{whenLabel(row.at)}{row.room_number ? ` · Ch. ${row.room_number}` : ''}</Text>
+                  </View>
+                  <Text style={styles.lineValue}>{money(line.qty * Number(line.price || 0))}</Text>
+                </View>
+              ))}
+              {!(row.items ?? []).length ? (
+                <View style={styles.noteItem}>
+                  <NoteThumb icon="restaurant" />
+                  <Text style={styles.lineLabel}>Restaurant</Text>
+                  <Text style={styles.lineValue}>{money(row.total)}</Text>
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {empty ? null : (
-        <View style={styles.line}>
-          <Text style={styles.totalLabel}>Total à payer</Text>
-          <Text style={styles.totalValue}>{money(total)}</Text>
+        <View style={styles.notePay}>
+          <Text style={styles.totalLabel}>Total à régler</Text>
+          <Text style={styles.folioTotal}>{money(total)}</Text>
         </View>
       )}
+
+      {paidOrders.length ? (
+        <View style={styles.noteBlock}>
+          <Text style={styles.noteBlockTitle}>Déjà réglé</Text>
+          {paidOrders.map((row) => (
+            <View key={row.id} style={styles.noteItem}>
+              <NoteThumb uri={photos.get(String(row.items?.[0]?.name || '').trim().toLowerCase())} icon="wallet" />
+              <View style={styles.cartCopy}>
+                <Text style={styles.lineLabel}>{(row.items ?? []).map((line) => line.name).join(', ') || 'Commande'} </Text>
+                <Text style={styles.meta}>{whenLabel(row.at)} · {row.pay === 'note' ? 'Note' : 'Comptant'}</Text>
+              </View>
+              <Text style={styles.lineValue}>{money(row.total)}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 export function ClientBoard() {
+  const router = useRouter();
   const { user } = useAuth();
   const { data, error, loading } = usePms<Payload>('guest');
   const stays = data?.stays ?? [];
@@ -763,19 +895,33 @@ export function ClientBoard() {
   const charges = (data?.charges ?? []).filter((row) => !row.settled_at && (!here || Number(row.reservation_id) === Number(here.id)));
   const extras = charges.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const note = here ? Number(here.total || 0) + extras : 0;
-  const rooms = new Set(stays.map((row) => row.room_number)).size;
   const first = user?.full_name?.split(' ')[0] || 'vous';
+  const lastStay = stays[0];
 
   if (loading && !data) return <Text style={styles.lead}>Chargement…</Text>;
   if (error) return <Text style={styles.notice}>{error}</Text>;
 
   return (
     <View style={styles.board}>
-      <Text style={styles.hello}>Bonjour, {first}</Text>
+      <View style={styles.hero}>
+        <View style={styles.heroCopy}>
+          <Text style={styles.heroKicker}>{here ? 'Séjour en cours' : lastStay ? 'Votre espace' : 'Bienvenue'}</Text>
+          <Text style={styles.hello}>Bonjour, {first}</Text>
+          <Text style={styles.heroLead}>
+            {here
+              ? `Chambre ${here.room_number} · départ ${prettyWhen(here.check_out, here.check_out_time)}`
+              : lastStay
+                ? `Dernier séjour : chambre ${lastStay.room_number} · ${prettyWhen(lastStay.check_in)}`
+                : 'Réservez une chambre, commandez au restaurant ou écrivez à la réception.'}
+          </Text>
+        </View>
+        {here?.room_photo ? <Image source={{ uri: here.room_photo }} style={styles.heroPhoto} contentFit="cover" /> : null}
+      </View>
+
       <View style={styles.kpis}>
         <View style={styles.kpi}>
           <Text style={styles.kpiValue}>{stays.length}</Text>
-          <Text style={styles.kpiLabel}>Historique</Text>
+          <Text style={styles.kpiLabel}>Séjours</Text>
         </View>
         <View style={styles.kpi}>
           <Text style={styles.kpiValue}>{money(note)}</Text>
@@ -786,9 +932,15 @@ export function ClientBoard() {
           <Text style={styles.kpiLabel}>Commandes</Text>
         </View>
         <View style={styles.kpi}>
-          <Text style={styles.kpiValue}>{rooms}</Text>
-          <Text style={styles.kpiLabel}>Chambres</Text>
+          <Text style={styles.kpiValue}>{data?.menu.length ?? 0}</Text>
+          <Text style={styles.kpiLabel}>Carte</Text>
         </View>
+      </View>
+
+      <View style={styles.quick}>
+        <GoldBtn compact icon="bed" label="Chambres" onPress={() => router.push('/browse')} />
+        <GoldBtn compact icon="restaurant" label="Commander" onPress={() => router.push('/table')} />
+        <GoldBtn compact icon="envelope" label="Réception" onPress={() => router.push('/desk')} />
       </View>
 
       <View style={styles.panel}>
@@ -811,23 +963,14 @@ export function ClientBoard() {
             </View>
           </>
         ) : (
-          <Text style={styles.meta}>Aucune note ouverte. Elle apparaît dès qu’un séjour est en cours.</Text>
+          <Text style={styles.meta}>Pas de note ouverte. Commandez au restaurant ou réservez une chambre.</Text>
         )}
       </View>
 
-      <View style={styles.panel}>
-        <Text style={styles.panelTitle}>Chambres déjà prises</Text>
-        {stays.map((stay) => (
-          <View key={stay.id} style={styles.history}>
-            {stay.room_photo ? <Image source={{ uri: stay.room_photo }} style={styles.historyPhoto} contentFit="cover" /> : <View style={styles.historyPhoto} />}
-            <View style={styles.cartCopy}>
-              <Text style={styles.name}>Chambre {stay.room_number}</Text>
-              <Text style={styles.meta}>{stay.room_type || 'Séjour'} · {prettyWhen(stay.check_in)} → {prettyWhen(stay.check_out)}</Text>
-              <Text style={styles.meta}>{STAY_LABEL[stay.status] || stay.status} · {money(stay.total)}</Text>
-            </View>
-          </View>
-        ))}
-        {!stays.length ? <Text style={styles.meta}>Vous n’avez pas encore séjourné ici.</Text> : null}
+      <View style={styles.stack}>
+        <Text style={styles.panelTitle}>Historique des séjours</Text>
+        {stays.map((stay) => <StayCard key={stay.id} stay={stay} />)}
+        {!stays.length ? <Text style={styles.meta}>Aucun séjour rattaché à ce compte pour le moment.</Text> : null}
       </View>
     </View>
   );
@@ -838,7 +981,22 @@ const styles = StyleSheet.create({
   page: { padding: 12, gap: 10, paddingBottom: 28 },
   pageInShell: { padding: 0 },
   pageDesk: { flexGrow: 1 },
-  board: { gap: 12 },
+  board: { gap: 14 },
+  hero: {
+    flexDirection: 'row',
+    gap: 14,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    backgroundColor: Palette.white,
+    overflow: 'hidden',
+  },
+  heroCopy: { flex: 1, gap: 6, minWidth: 0 },
+  heroKicker: { color: Palette.gold, fontWeight: '800', fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase' },
+  heroLead: { color: Palette.ink, opacity: 0.72, fontSize: 14, lineHeight: 20 },
+  heroPhoto: { width: 132, height: 96, borderRadius: 14, backgroundColor: 'rgba(20,22,34,0.06)' },
+  quick: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   kpis: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   kpi: { flexGrow: 1, flexBasis: 120, minWidth: 120, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: Palette.gold, backgroundColor: Palette.white, gap: 2 },
   kpiValue: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
@@ -850,8 +1008,37 @@ const styles = StyleSheet.create({
   lineValue: { color: Palette.ink, fontWeight: '700' },
   totalLabel: { color: Palette.ink, fontWeight: '800' },
   totalValue: { color: Palette.ink, fontWeight: '800', fontSize: 16 },
-  history: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  historyPhoto: { width: 64, height: 48, borderRadius: 10, backgroundColor: 'rgba(20,22,34,0.06)' },
+  stayCard: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Palette.gold,
+    backgroundColor: Palette.white,
+    overflow: 'hidden',
+  },
+  stayPhoto: { width: 92, height: 92, borderRadius: 14, backgroundColor: 'rgba(20,22,34,0.06)' },
+  stayPhotoEmpty: { alignItems: 'center', justifyContent: 'center' },
+  stayCopy: { flex: 1, minWidth: 0, gap: 4, justifyContent: 'center' },
+  stayHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stayTitle: { flex: 1, color: Palette.ink, fontWeight: '800', fontSize: 16 },
+  stayBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: 'rgba(212,175,55,0.28)' },
+  stayBadgeText: { color: Palette.ink, fontSize: 10, fontWeight: '800' },
+  stayPrice: { color: Palette.gold, fontWeight: '800', fontSize: 16, marginTop: 2 },
+  folio: { gap: 12, paddingBottom: 8 },
+  folioHead: { padding: 16, borderRadius: 18, backgroundColor: Palette.ink, gap: 4 },
+  folioKicker: { color: Palette.gold, fontWeight: '800', fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' },
+  folioTitle: { color: Palette.white, fontWeight: '800', fontSize: 20 },
+  folioMeta: { color: Palette.white, opacity: 0.72, fontSize: 13 },
+  folioTotal: { color: Palette.ink, fontWeight: '800', fontSize: 20 },
+  noteBlock: { gap: 8, padding: 12, borderRadius: 18, borderWidth: 1, borderColor: Palette.gold, backgroundColor: Palette.white },
+  noteBlockTitle: { color: Palette.ink, fontWeight: '800', fontSize: 13, letterSpacing: 0.4, textTransform: 'uppercase' },
+  noteItem: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  noteOrder: { gap: 8 },
+  noteThumb: { width: 48, height: 48, borderRadius: 12, backgroundColor: 'rgba(20,22,34,0.06)' },
+  noteEmpty: { alignItems: 'center', gap: 8, padding: 20, borderRadius: 18, borderWidth: 1, borderColor: Palette.gold, backgroundColor: Palette.white },
+  notePay: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 16, backgroundColor: Palette.gold },
   helloRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   hello: { color: Palette.ink, fontWeight: '800', fontSize: 18, flex: 1 },
   cartBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Palette.gold, alignItems: 'center', justifyContent: 'center' },

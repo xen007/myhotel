@@ -54,7 +54,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     const active = pathname === item.href || (item.href !== '/home' && pathname.startsWith(item.href));
     return (
       <Pressable key={item.href} onPress={() => go(item.href)} style={[styles.navItem, active && styles.navItemOn]}>
-        <AppIcon name={item.icon} size={20} color={active ? Palette.gold : Palette.white} />
+        {client ? null : <AppIcon name={item.icon} size={20} color={active ? Palette.gold : Palette.white} />}
         <Text numberOfLines={1} style={[styles.navLabel, active && styles.navLabelOn]}>
           {item.label}
         </Text>
@@ -84,6 +84,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const bar = (
     <AppBar
       showBrand={!isDesktop}
+      actionsOnly={isDesktop && client}
       unread={unread}
       onNotifications={() => {
         void reload();
@@ -118,10 +119,36 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <ProfilePanel embed={!isDesktop} onClose={() => setRight(null)} />
         );
 
+  const clientBar = (
+    <View style={styles.clientBar}>
+      <View style={styles.clientBrand}>
+        <BrandMark size={32} />
+        <Text style={styles.clientBrandName}>{Brand.name}</Text>
+      </View>
+      <View style={styles.clientGrow} />
+      <View style={styles.clientNav}>
+        {links.map((item) => {
+          const active = pathname === item.href || (item.href !== '/home' && pathname.startsWith(item.href));
+          return (
+            <Pressable key={item.href} onPress={() => go(item.href)} style={[styles.clientLink, active && styles.clientLinkOn]}>
+              <Text numberOfLines={1} style={[styles.clientLinkText, active && styles.clientLinkTextOn]}>{item.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {bar}
+    </View>
+  );
+
   return (
     <View style={styles.screen}>
-      <StatusBar style={isDesktop ? 'light' : 'dark'} />
-      {isDesktop ? (
+      <StatusBar style={isDesktop && !client ? 'light' : 'dark'} />
+      {isDesktop && client ? (
+        <View style={styles.clientDesktop}>
+          {clientBar}
+          <View style={styles.body}>{children}</View>
+        </View>
+      ) : isDesktop ? (
         <View style={styles.desktop}>
           <View style={styles.sidebar}>{sidebar}</View>
           <View style={styles.main}>
@@ -210,4 +237,30 @@ const styles = StyleSheet.create({
   mobile: { flex: 1, backgroundColor: '#F6F7FA', minHeight: 0 },
   mobileTop: { backgroundColor: Palette.white },
   mobileMenu: { flex: 1, backgroundColor: Palette.ink, minHeight: 0 },
+  clientDesktop: { flex: 1, backgroundColor: '#F6F7FA', minHeight: 0 },
+  clientBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingLeft: 16,
+    backgroundColor: Palette.white,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(212,175,55,0.45)',
+    minHeight: 64,
+  },
+  clientBrand: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+  clientBrandName: { color: Palette.ink, fontWeight: '800', fontSize: 16, letterSpacing: 0.4 },
+  clientGrow: { flex: 1, minWidth: 12 },
+  clientNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, flexShrink: 1, flexWrap: 'wrap' },
+  clientLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+  clientLinkOn: { backgroundColor: Palette.gold },
+  clientLinkText: { color: Palette.ink, fontSize: 13, fontWeight: '600' },
+  clientLinkTextOn: { fontWeight: '800' },
 });

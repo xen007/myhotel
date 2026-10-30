@@ -12,6 +12,6 @@ const map = {
   'eye-off': 'hide',
 } as const;
 
-export function AuthIcon({ name, color = Palette.ink }: { name: AuthIconName; color?: string }) {
-  return <AppIcon name={map[name]} size={22} color={color} />;
+export function AuthIcon({ name, color = Palette.ink, size = 22 }: { name: AuthIconName; color?: string; size?: number }) {
+  return <AppIcon name={map[name]} size={size} color={color} />;
 }

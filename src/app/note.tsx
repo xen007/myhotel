@@ -9,7 +9,7 @@ export default function NoteScreen() {
   if (ready && !user) return <Redirect href="/welcome" />;
   if (ready && user && user.role !== 'client') return <Redirect href="/home" />;
   return (
-    <HotelShell title="Note" fill>
+    <HotelShell title="Note" fill hideHeading>
       <ClientSpace view="note" />
     </HotelShell>
   );

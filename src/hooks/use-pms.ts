@@ -11,7 +11,6 @@ export function usePms<T>(path: string) {
 
   const reload = useCallback(async () => {
     if (!token) return;
-    setLoading(true);
     setError(null);
     try {
       const next = await pmsGet<T>(token, path);

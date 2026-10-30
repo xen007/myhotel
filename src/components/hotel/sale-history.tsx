@@ -18,6 +18,7 @@ export type HistorySale = {
   status: string;
   guest?: string;
   room?: string;
+  table?: string;
   items: HistoryLine[];
 };
 

@@ -8,6 +8,7 @@ const {
   markReadyRoomsDisponible,
   releaseExpiredStays,
 } = require('./pms-routes');
+const { pushNotice, listNotices, markNoticeRead } = require('./notify');
 
 const PORT = Number(
   process.env.PORT ||
@@ -874,27 +875,13 @@ function createRequestHandler(db) {
           [user.id],
         );
 
-        await db.run(
-          `INSERT INTO notifications
-            (
-              category,
-              title,
-              body,
-              is_read,
-              created_at
-            )
-           VALUES
-            (
-              'COMPTE',
-              'Nouvel inscrit',
-              ?,
-              0,
-              datetime('now')
-            )`,
-          [
-            `${fullName} (${email}) vient de créer un compte.`,
-          ],
-        );
+        await pushNotice(db, {
+          category: 'COMPTE',
+          title: 'Nouvel inscrit',
+          body: `${fullName} (${email}) vient de créer un compte.`,
+          href: '/clients',
+          roles: ['owner', 'manager'],
+        });
 
         const fresh =
           await db.get(
@@ -1168,35 +1155,8 @@ function createRequestHandler(db) {
 
         if (!user) return;
 
-        const items =
-          await db.all(
-            'SELECT * FROM notifications ORDER BY datetime(created_at) DESC, id DESC LIMIT 40',
-          );
-
-        ok(res, {
-          items: items.map(
-            (row) => ({
-              ...row,
-
-              id: Number(
-                row.id,
-              ),
-
-              is_read:
-                Number(
-                  row.is_read,
-                ) === 1,
-            }),
-          ),
-
-          unread: Number(
-            (
-              await db.get(
-                'SELECT COUNT(*) AS n FROM notifications WHERE is_read = 0',
-              )
-            ).n,
-          ),
-        });
+        const payload = await listNotices(db, user);
+        ok(res, payload);
 
         return;
       }
@@ -1218,11 +1178,7 @@ function createRequestHandler(db) {
         const body =
           await readBody(req);
 
-        if (body.all) {
-          await db.run(
-            'UPDATE notifications SET is_read = 1 WHERE is_read = 0',
-          );
-        } else {
+        if (!body.all) {
           const id = Number(
             body.id,
           );
@@ -1235,42 +1191,10 @@ function createRequestHandler(db) {
 
             return;
           }
-
-          await db.run(
-            'UPDATE notifications SET is_read = 1 WHERE id = ?',
-            [id],
-          );
         }
 
-        const items =
-          await db.all(
-            'SELECT * FROM notifications ORDER BY datetime(created_at) DESC, id DESC LIMIT 40',
-          );
-
-        ok(res, {
-          items: items.map(
-            (row) => ({
-              ...row,
-
-              id: Number(
-                row.id,
-              ),
-
-              is_read:
-                Number(
-                  row.is_read,
-                ) === 1,
-            }),
-          ),
-
-          unread: Number(
-            (
-              await db.get(
-                'SELECT COUNT(*) AS n FROM notifications WHERE is_read = 0',
-              )
-            ).n,
-          ),
-        });
+        const payload = await markNoticeRead(db, user, body);
+        ok(res, payload);
 
         return;
       }

@@ -81,7 +81,7 @@ function cardStatus(task: HkTask, room?: HkRoom) {
 
 export default function HousekeepingScreen() {
   const { data, error, loading, reload, token, user, ready } = usePms<Payload>('housekeeping');
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [modal, setModal] = useState<ModalKind>(null);
@@ -252,10 +252,8 @@ export default function HousekeepingScreen() {
   if (ready && user?.role === 'receptionist') return <Redirect href="/home" />;
 
   const isDesktop = width >= Breakpoints.desktop;
-  const phone = Math.min(width, height) < 600;
-  const cols = phone ? 1 : isDesktop ? 4 : width >= 900 ? 3 : 2;
-  const available = (isDesktop ? width - 248 : width) - 36;
-  const cardWidth = Math.max(148, Math.floor((available - (cols - 1) * 10) / cols));
+  const cols = isDesktop ? 3 : width >= Breakpoints.tablet ? 2 : 1;
+  const cardWidth = (cols === 1 ? '100%' : cols === 2 ? '48.5%' : '31.8%') as `${number}%`;
   const agentHits = agents.filter((agent) => {
     if (agent.name === user?.full_name) return false;
     if (!agentQuery.trim()) return true;
@@ -371,7 +369,7 @@ export default function HousekeepingScreen() {
       </ConfirmDialog>
 
       <Modal visible={modal !== null} transparent animationType="fade" onRequestClose={closeModal}>
-        <View style={styles.overlay} pointerEvents="box-none">
+        <View style={[styles.overlay, { pointerEvents: 'box-none' }]}>
           <Pressable style={styles.overlayFill} onPress={closeModal} />
           <View style={[styles.sheet, styles.sheetSquare]}>
             <View style={styles.sheetHead}>
@@ -428,7 +426,7 @@ export default function HousekeepingScreen() {
         </View>
       </Modal>
       <Modal visible={!!historyRoom} transparent animationType="fade" onRequestClose={() => setHistoryRoom(null)}>
-        <View style={styles.overlay} pointerEvents="box-none">
+        <View style={[styles.overlay, { pointerEvents: 'box-none' }]}>
           <Pressable style={styles.overlayFill} onPress={() => setHistoryRoom(null)} />
           <View style={[styles.sheet, styles.historySheet]}>
             <View style={styles.sheetHead}>

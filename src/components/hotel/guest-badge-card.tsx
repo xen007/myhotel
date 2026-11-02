@@ -95,7 +95,7 @@ export function GuestBadgeCard({ badge, width = 340 }: { badge: GuestBadge; widt
           <Text style={[styles.room, { fontSize: 10 * scale }]}>CH. {badge.room_number}</Text>
         </View>
         {stamp ? (
-          <View style={styles.stampWrap} pointerEvents="none">
+          <View style={[styles.stampWrap, { pointerEvents: 'none' }]}>
             <Text style={[styles.stamp, { fontSize: 22 * scale }]}>{stamp}</Text>
           </View>
         ) : null}

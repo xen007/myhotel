@@ -9,6 +9,7 @@ import { HotelShell } from '@/components/hotel/hotel-shell';
 import { GoldBtn } from '@/components/hotel/kit';
 import { SaleHistory, type HistorySale } from '@/components/hotel/sale-history';
 import { Breakpoints, Palette, Radius } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 import { usePms } from '@/hooks/use-pms';
 import { pmsPost } from '@/lib/api';
 import { money } from '@/lib/format';
@@ -66,7 +67,9 @@ const ORDER_STATUS: Record<string, string> = {
 
 
 export default function ServiceScreen() {
-  const { data, error, loading, reload, token, user, ready } = usePms<Payload>('restaurant');
+  const { user, ready } = useAuth();
+  const allowed = user?.role === 'restaurant' || user?.role === 'manager' || user?.role === 'owner';
+  const { data, error, loading, reload, token } = usePms<Payload>('restaurant', Boolean(ready && allowed));
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('all');
@@ -82,7 +85,6 @@ export default function ServiceScreen() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const allowed = user?.role === 'restaurant' || user?.role === 'manager' || user?.role === 'owner';
   const dishes = useMemo(() => (data?.items ?? []).filter((row) => Number(row.available ?? 1) === 1), [data?.items]);
   const payers = data?.payers ?? [];
   const occupants = data?.occupants ?? [];
@@ -146,8 +148,9 @@ export default function ServiceScreen() {
     table: row.table_number || '',
     items: (row.items ?? []).map((item) => ({ name: item.name, qty: Number(item.qty || 0), price: Number(item.price || 0) })),
   })), [data?.orders]);
-  if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && user && !allowed) return <Redirect href="/home" />;
+  if (!ready) return null;
+  if (!user) return <Redirect href="/welcome" />;
+  if (!allowed) return <Redirect href="/home" />;
 
   function add(dish: Dish) {
     const next = (cart[dish.id] || 0) + 1;

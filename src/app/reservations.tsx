@@ -913,7 +913,7 @@ export default function ReservationsScreen() {
       <Modal visible={!!booking} animationType="fade" transparent onRequestClose={closeModal}>
         <View style={styles.overlay}>
           <Pressable style={styles.overlayFill} onPress={closeModal} />
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetWrap} pointerEvents="box-none">
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.sheetWrap, { pointerEvents: 'box-none' }]}>
           <View style={styles.sheet}>
             <ScrollView contentContainerStyle={styles.sheetInner} showsVerticalScrollIndicator={false}>
               <View style={styles.sheetHead}>

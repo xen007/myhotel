@@ -9,6 +9,7 @@ import { FilterBar } from '@/components/hotel/filter-bar';
 import { HotelShell } from '@/components/hotel/hotel-shell';
 import { ConfirmDialog, GoldBtn } from '@/components/hotel/kit';
 import { Breakpoints, Palette, Radius } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 import { usePms } from '@/hooks/use-pms';
 import { pmsPost } from '@/lib/api';
 import { money, prettyStamp } from '@/lib/format';
@@ -56,7 +57,9 @@ async function toStoredUri(asset: ImagePicker.ImagePickerAsset) {
 }
 
 export default function KitchenScreen() {
-  const { data, error, loading, reload, token, user, ready } = usePms<Payload>('restaurant');
+  const { user, ready } = useAuth();
+  const allowed = user?.role === 'restaurant' || user?.role === 'manager' || user?.role === 'owner';
+  const { data, error, loading, reload, token } = usePms<Payload>('restaurant', Boolean(ready && allowed));
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
@@ -65,7 +68,6 @@ export default function KitchenScreen() {
   const [pending, setPending] = useState<Good | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const allowed = user?.role === 'restaurant' || user?.role === 'manager' || user?.role === 'owner';
   const isDesktop = width >= Breakpoints.desktop;
   const goods = data?.goods ?? [];
   const moves = data?.moves ?? [];
@@ -84,8 +86,9 @@ export default function KitchenScreen() {
     });
   }, [goods, query, status]);
 
-  if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && user && !allowed) return <Redirect href="/home" />;
+  if (!ready) return null;
+  if (!user) return <Redirect href="/welcome" />;
+  if (!allowed) return <Redirect href="/home" />;
 
   function openEdit(row: Good) {
     setFormError(null);

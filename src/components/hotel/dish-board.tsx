@@ -7,7 +7,7 @@ import { AppIcon } from '@/components/box-icon';
 import { FilterBar } from '@/components/hotel/filter-bar';
 import { HotelShell } from '@/components/hotel/hotel-shell';
 import { ConfirmDialog, GoldBtn } from '@/components/hotel/kit';
-import { Palette, Radius } from '@/constants/theme';
+import { Breakpoints, Palette, Radius } from '@/constants/theme';
 import { usePms } from '@/hooks/use-pms';
 import { pmsPost } from '@/lib/api';
 import { money } from '@/lib/format';
@@ -66,9 +66,9 @@ export function DishBoard({ mode, title: titleOverride }: { mode: 'food' | 'drin
   const [editingCategory, setEditingCategory] = useState<{ id: number; name: string } | null>(null);
   const [pendingCategory, setPendingCategory] = useState<Category | null>(null);
   const today = data?.date || '';
-  const minCard = 400;
-  const cols = Math.max(1, Math.min(3, Math.floor(Math.max(width - 48, minCard) / minCard)));
-  const cardWidth = (cols === 1 ? '100%' : `${100 / cols - 1.6}%`) as `${number}%`;
+  const cols = width >= Breakpoints.desktop ? 3 : width >= Breakpoints.tablet ? 2 : 1;
+  const cardWidth = (cols === 1 ? '100%' : cols === 2 ? '48.5%' : '31.8%') as `${number}%`;
+  const photoH = width >= Breakpoints.desktop ? 118 : cols === 1 ? 92 : 84;
   const kindKey = mode === 'drink' ? 'drink' : 'food';
   const categories = useMemo(
     () => (data?.categories ?? []).filter((row) => (mode === 'drink' ? row.kind === 'drink' : row.kind !== 'drink')),
@@ -253,10 +253,10 @@ export function DishBoard({ mode, title: titleOverride }: { mode: 'food' | 'drin
             <View key={dish.id} style={[styles.card, { width: cardWidth }, !available && styles.off]}>
               <View style={styles.photoWrap}>
                 {dish.photo ? (
-                  <Image source={{ uri: dish.photo }} style={styles.photo} contentFit="cover" />
+                  <Image source={{ uri: dish.photo }} style={[styles.photo, { height: photoH }]} contentFit="cover" />
                 ) : (
-                  <View style={styles.photo}>
-                    <AppIcon name={drinkNames.has(dish.category.toLowerCase()) ? 'coffee' : 'restaurant'} size={28} color={Palette.gold} />
+                  <View style={[styles.photo, { height: photoH }]}>
+                    <AppIcon name={drinkNames.has(dish.category.toLowerCase()) ? 'coffee' : 'restaurant'} size={22} color={Palette.gold} />
                   </View>
                 )}
               </View>
@@ -386,12 +386,12 @@ export function DishBoard({ mode, title: titleOverride }: { mode: 'food' | 'drin
 
 const styles = StyleSheet.create({
   headBtns: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 8 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  card: { backgroundColor: Palette.white, borderRadius: Radius.card, borderWidth: 1, borderColor: Palette.gold, overflow: 'hidden' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  card: { backgroundColor: Palette.white, borderRadius: 16, borderWidth: 1, borderColor: Palette.gold, overflow: 'hidden' },
   photoWrap: { position: 'relative' },
-  photo: { width: '100%', aspectRatio: 4 / 3, backgroundColor: 'rgba(20,22,34,0.04)', alignItems: 'center', justifyContent: 'center' },
+  photo: { width: '100%', height: 92, backgroundColor: 'rgba(20,22,34,0.04)', alignItems: 'center', justifyContent: 'center' },
   off: { opacity: 0.55 },
-  body: { padding: 12, gap: 6 },
+  body: { padding: 8, gap: 4 },
   actions: { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   name: { flex: 1, color: Palette.ink, fontWeight: '800' },

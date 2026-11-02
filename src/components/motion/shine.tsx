@@ -21,7 +21,7 @@ export function ShineSweep({ play }: { play: boolean }) {
     transform: [{ translateX: x.value }, { rotate: '18deg' }],
   }));
 
-  return <Animated.View pointerEvents="none" style={[styles.bar, style]} />;
+  return <Animated.View style={[styles.bar, { pointerEvents: 'none' }, style]} />;
 }
 
 const styles = StyleSheet.create({

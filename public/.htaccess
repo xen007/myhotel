@@ -1,0 +1,14 @@
+RewriteEngine On
+RewriteBase /
+
+# Fichiers existants (JS, CSS, images) : servir tels quels
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# API Node si le reverse-proxy Hostinger pointe /api vers le process
+# (inutile si node server/index.js sert déjà le site)
+
+# Expo Router / SPA
+RewriteRule ^index\.html$ - [L]
+RewriteRule . /index.html [L]

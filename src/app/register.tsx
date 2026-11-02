@@ -103,32 +103,26 @@ export default function RegisterScreen() {
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Nom</Text>
-        <AuthField
-          icon="person"
-          placeholder="Nom"
-          value={lastName}
-          onChangeText={setLastName}
-          autoCapitalize="words"
-          autoComplete="family-name"
-          textContentType="familyName"
-          editable={!loading}
-        />
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Prénom</Text>
-        <AuthField
-          icon="person"
-          placeholder="Prénom"
-          value={firstName}
-          onChangeText={setFirstName}
-          autoCapitalize="words"
-          autoComplete="given-name"
-          textContentType="givenName"
-          editable={!loading}
-        />
-      </View>
+      <AuthField
+        icon="person"
+        placeholder="Nom"
+        value={lastName}
+        onChangeText={setLastName}
+        autoCapitalize="words"
+        autoComplete="family-name"
+        textContentType="familyName"
+        editable={!loading}
+      />
+      <AuthField
+        icon="person"
+        placeholder="Prénom"
+        value={firstName}
+        onChangeText={setFirstName}
+        autoCapitalize="words"
+        autoComplete="given-name"
+        textContentType="givenName"
+        editable={!loading}
+      />
       <AuthField
         icon="mail"
         placeholder="Adresse e-mail"
@@ -184,23 +178,6 @@ const styles = StyleSheet.create({
   },
   titleSm: {
     fontSize: 18,
-  },
-  card: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(212,175,55,0.55)',
-    borderRadius: 12,
-    padding: 6,
-    backgroundColor: Palette.white,
-    gap: 4,
-  },
-  cardLabel: {
-    color: Palette.ink,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    paddingHorizontal: 4,
   },
   errorBox: {
     borderWidth: 1,

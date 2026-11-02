@@ -40,9 +40,6 @@ const VISIT_MENU: { href: string; label: string; icon: BoxIconName }[] = [
   { href: '/boutique', label: 'Boutique', icon: 'cart' },
   { href: '/welcome?section=avis', label: 'Témoignages', icon: 'star' },
   { href: '/welcome?section=contact', label: 'Contact', icon: 'envelope' },
-  { href: '/mentions', label: 'Mentions légales', icon: 'info-circle' },
-  { href: '/confidentialite', label: 'Confidentialité', icon: 'lock-alt' },
-  { href: '/conditions', label: 'Conditions générales', icon: 'food-menu' },
 ];
 
 function pathOf(href: string) {

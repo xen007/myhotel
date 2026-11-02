@@ -628,7 +628,7 @@ export default function StockScreen() {
       ) : null}
 
       <Modal visible={!!form} transparent animationType="fade" onRequestClose={() => setForm(null)}>
-        <View style={styles.overlay} pointerEvents="box-none">
+        <View style={[styles.overlay, { pointerEvents: 'box-none' }]}>
           <Pressable style={styles.overlayFill} onPress={() => setForm(null)} />
           <View style={styles.sheet}>
             <View style={styles.sheetHead}>
@@ -749,7 +749,7 @@ export default function StockScreen() {
       </Modal>
 
       <Modal visible={historyOpen} transparent animationType="fade" onRequestClose={() => setHistoryOpen(false)}>
-        <View style={styles.overlay} pointerEvents="box-none">
+        <View style={[styles.overlay, { pointerEvents: 'box-none' }]}>
           <Pressable style={styles.overlayFill} onPress={() => setHistoryOpen(false)} />
           <View style={styles.sheet}>
             <View style={styles.sheetHead}>

@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 import { HotelShell, StatusBadge } from '@/components/hotel/hotel-shell';
 import { GoldBtn } from '@/components/hotel/kit';
 import { Breakpoints, Palette } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 import { usePms } from '@/hooks/use-pms';
 import { pmsPost } from '@/lib/api';
 import { money, prettyStamp } from '@/lib/format';
@@ -42,18 +43,20 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function OrdersScreen() {
-  const { data, error, loading, reload, token, user, ready } = usePms<Payload>('restaurant');
+  const { user, ready } = useAuth();
+  const allowed = user?.role === 'restaurant' || user?.role === 'manager' || user?.role === 'owner';
+  const { data, error, loading, reload, token } = usePms<Payload>('restaurant', Boolean(ready && allowed));
   const { width } = useWindowDimensions();
   const [filter, setFilter] = useState('open');
-  const allowed = user?.role === 'restaurant' || user?.role === 'manager' || user?.role === 'owner';
   const cols = width >= Breakpoints.desktop ? 3 : width >= Breakpoints.tablet ? 2 : 1;
   const orders = useMemo(() => {
     const rows = data?.orders ?? [];
     return rows.filter((row) => (filter === 'open' ? row.status !== 'reglee' : row.status === filter));
   }, [data?.orders, filter]);
 
-  if (ready && !user) return <Redirect href="/welcome" />;
-  if (ready && user && !allowed) return <Redirect href="/home" />;
+  if (!ready) return null;
+  if (!user) return <Redirect href="/welcome" />;
+  if (!allowed) return <Redirect href="/home" />;
 
   async function advance(order: Order) {
     if (!token) return;

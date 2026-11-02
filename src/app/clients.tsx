@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { FilterBar } from '@/components/hotel/filter-bar';
 import { HotelShell } from '@/components/hotel/hotel-shell';
@@ -47,6 +47,20 @@ export default function ClientsScreen() {
     if (!needle) return items;
     return items.filter((item) => `${item.full_name} ${item.email} ${item.phone ?? ''}`.toLowerCase().includes(needle));
   }, [items, query]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-client') {
+        setFormError(null);
+        setForm({ ...EMPTY });
+      }
+      if (action === 'close-client') setForm(null);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, []);
 
   if (ready && !user) return <Redirect href="/welcome" />;
   if (ready && user && !allowed) return <Redirect href="/home" />;
@@ -102,8 +116,8 @@ export default function ClientsScreen() {
       title="Clients"
       loading={loading && !data}
       error={error}
-      right={<GoldBtn compact icon="plus" label="Nouveau client" onPress={() => { setFormError(null); setForm({ ...EMPTY }); }} />}>
-      <FilterBar query={query} onQuery={setQuery} queryPlaceholder="Rechercher un client..." />
+      right={<GoldBtn nativeID="guide-new-client" compact icon="plus" label="Nouveau client" onPress={() => { setFormError(null); setForm({ ...EMPTY }); }} />}>
+      <FilterBar searchId="guide-clients-search" query={query} onQuery={setQuery} queryPlaceholder="Rechercher un client..." />
       <ScrollView horizontal={!isDesktop} showsHorizontalScrollIndicator={!isDesktop}>
         <View style={[styles.table, { minWidth: isDesktop ? '100%' : 760 }]}>
           <View style={[styles.tr, styles.th]}>
@@ -141,16 +155,16 @@ export default function ClientsScreen() {
             <Text style={styles.sheetTitle}>Nouveau client</Text>
             <Text style={styles.meta}>Le client se connecte ensuite avec cet e-mail.</Text>
             <View style={styles.grid}>
-              <TextInput value={form?.last_name} onChangeText={(last_name) => form && setForm({ ...form, last_name })} placeholder="Nom" style={[styles.input, styles.inputHalf]} />
-              <TextInput value={form?.first_name} onChangeText={(first_name) => form && setForm({ ...form, first_name })} placeholder="Prénom" style={[styles.input, styles.inputHalf]} />
+              <TextInput nativeID="guide-client-last" value={form?.last_name} onChangeText={(last_name) => form && setForm({ ...form, last_name })} placeholder="Nom" style={[styles.input, styles.inputHalf]} />
+              <TextInput nativeID="guide-client-first" value={form?.first_name} onChangeText={(first_name) => form && setForm({ ...form, first_name })} placeholder="Prénom" style={[styles.input, styles.inputHalf]} />
             </View>
-            <TextInput value={form?.email} onChangeText={(email) => form && setForm({ ...form, email })} placeholder="E-mail" autoCapitalize="none" keyboardType="email-address" style={styles.input} />
-            <TextInput value={form?.phone} onChangeText={(phone) => form && setForm({ ...form, phone })} placeholder="Téléphone" keyboardType="phone-pad" style={styles.input} />
-            <TextInput value={form?.password} onChangeText={(password) => form && setForm({ ...form, password })} placeholder="Mot de passe" secureTextEntry style={styles.input} />
-            <TextInput value={form?.password_confirm} onChangeText={(password_confirm) => form && setForm({ ...form, password_confirm })} placeholder="Confirmation du mot de passe" secureTextEntry style={styles.input} />
+            <TextInput nativeID="guide-client-email" value={form?.email} onChangeText={(email) => form && setForm({ ...form, email })} placeholder="E-mail" autoCapitalize="none" keyboardType="email-address" style={styles.input} />
+            <TextInput nativeID="guide-client-phone" value={form?.phone} onChangeText={(phone) => form && setForm({ ...form, phone })} placeholder="Téléphone" keyboardType="phone-pad" style={styles.input} />
+            <TextInput nativeID="guide-client-pass" value={form?.password} onChangeText={(password) => form && setForm({ ...form, password })} placeholder="Mot de passe" secureTextEntry style={styles.input} />
+            <TextInput nativeID="guide-client-pass2" value={form?.password_confirm} onChangeText={(password_confirm) => form && setForm({ ...form, password_confirm })} placeholder="Confirmation du mot de passe" secureTextEntry style={styles.input} />
             {formError ? <Text style={styles.err}>{formError}</Text> : null}
             <View style={styles.actions}>
-              <GoldBtn compact label={saving ? 'Création…' : 'Créer le compte'} onPress={() => void save()} />
+              <GoldBtn nativeID="guide-client-save" compact label={saving ? 'Création…' : 'Créer le compte'} onPress={() => void save()} />
               <GoldBtn compact variant="ghost" label="Fermer" onPress={() => setForm(null)} />
             </View>
           </View>

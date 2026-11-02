@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '@/components/box-icon';
 import { FilterBar, FilterSelect } from '@/components/hotel/filter-bar';
@@ -88,6 +88,20 @@ export default function StaffScreen() {
     setForm({ ...emptyForm });
   }
 
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-staff') {
+        setFormError(null);
+        setForm({ ...emptyForm });
+      }
+      if (action === 'close-staff') setForm(null);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, []);
+
   function openEdit(item: Employee) {
     setFormError(null);
     setForm({
@@ -152,7 +166,7 @@ export default function StaffScreen() {
       title="Personnel"
       loading={loading && !data}
       error={error}
-      right={<GoldBtn compact icon="plus" label="Ajouter" onPress={openCreate} />}>
+      right={<GoldBtn nativeID="guide-staff-add" compact icon="plus" label="Ajouter" onPress={openCreate} />}>
       <FilterBar
         query={query}
         onQuery={setQuery}
@@ -235,7 +249,7 @@ export default function StaffScreen() {
           <View style={styles.fields}>
             <View style={styles.fieldWide}>
               <Text style={styles.label}>Nom complet</Text>
-              <TextInput value={form.full_name} onChangeText={(full_name) => setForm({ ...form, full_name })} placeholder="Nom et prénom" style={styles.input} />
+              <TextInput nativeID="guide-staff-name" value={form.full_name} onChangeText={(full_name) => setForm({ ...form, full_name })} placeholder="Nom et prénom" style={styles.input} />
             </View>
             <View style={styles.field}>
               <Text style={styles.label}>E-mail</Text>

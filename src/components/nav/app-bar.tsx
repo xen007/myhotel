@@ -40,6 +40,7 @@ export function AppBar({
       )}
       <View style={styles.actions}>
         <Pressable
+          nativeID="guide-alerts"
           onPress={onNotifications}
           hitSlop={8}
           style={[styles.iconBtn, notificationsOpen && styles.iconBtnOn]}>

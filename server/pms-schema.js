@@ -453,6 +453,14 @@ async function ensurePmsSchema(db) {
       attachment_mime TEXT,
       attachment_size INTEGER
     )`,
+    `CREATE TABLE IF NOT EXISTS assistant_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      body TEXT NOT NULL,
+      tour TEXT,
+      created_at TEXT NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS cash_moves (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       kind TEXT NOT NULL,

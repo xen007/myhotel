@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Redirect } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '@/components/box-icon';
 import { FilterBar } from '@/components/hotel/filter-bar';
@@ -85,6 +85,17 @@ export default function ServiceScreen() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-service-cart') setCartOpen(true);
+      if (action === 'close-service-cart') setCartOpen(false);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, []);
   const dishes = useMemo(() => (data?.items ?? []).filter((row) => Number(row.available ?? 1) === 1), [data?.items]);
   const payers = data?.payers ?? [];
   const occupants = data?.occupants ?? [];
@@ -227,8 +238,8 @@ export default function ServiceScreen() {
       error={error}
       right={
         <View style={styles.headBtns}>
-          <GoldBtn compact icon="time" label="Historique" variant="ghost" onPress={() => setHistoryOpen(true)} />
-          <GoldBtn compact icon="cart" label={cartCount ? `Panier ${cartCount}` : 'Panier'} onPress={() => setCartOpen(true)} />
+          <GoldBtn nativeID="guide-service-history" compact icon="time" label="Historique" variant="ghost" onPress={() => setHistoryOpen(true)} />
+          <GoldBtn nativeID="guide-service-cart" compact icon="cart" label={cartCount ? `Panier ${cartCount}` : 'Panier'} onPress={() => setCartOpen(true)} />
         </View>
       }>
       <FilterBar query={query} onQuery={setQuery} queryPlaceholder="Rechercher un plat ou une boisson..." status={kind} onStatus={setKind} statuses={categories} />
@@ -323,7 +334,7 @@ export default function ServiceScreen() {
               {formError ? <Text style={styles.err}>{formError}</Text> : null}
               <View style={styles.row}>
                 <Text style={styles.total}>{money(cartTotal)}</Text>
-                <GoldBtn compact icon={onAccount ? 'bed' : 'wallet'} label={saving ? 'Enregistrement…' : onAccount ? 'Noter · plus tard' : 'Encaisser'} onPress={() => void sell()} />
+                <GoldBtn nativeID="guide-service-pay" compact icon={onAccount ? 'bed' : 'wallet'} label={saving ? 'Enregistrement…' : onAccount ? 'Noter · plus tard' : 'Encaisser'} onPress={() => void sell()} />
               </View>
             </ScrollView>
           </View>

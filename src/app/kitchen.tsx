@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Redirect } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '@/components/box-icon';
@@ -85,6 +85,20 @@ export default function KitchenScreen() {
       return true;
     });
   }, [goods, query, status]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-kitchen') {
+        setFormError(null);
+        setForm({ ...EMPTY });
+      }
+      if (action === 'close-kitchen') setForm(null);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, []);
 
   if (!ready) return null;
   if (!user) return <Redirect href="/welcome" />;
@@ -171,7 +185,7 @@ export default function KitchenScreen() {
       title="Gestion stock"
       loading={loading && !data}
       error={error}
-      right={<GoldBtn compact icon="plus" label="Ajouter" onPress={() => { setFormError(null); setForm({ ...EMPTY }); }} />}>
+      right={<GoldBtn nativeID="guide-kitchen-add" compact icon="plus" label="Ajouter" onPress={() => { setFormError(null); setForm({ ...EMPTY }); }} />}>
       <FilterBar
         query={query}
         onQuery={setQuery}

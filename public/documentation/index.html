@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MyHotel — Mode d’emploi</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="side">
+      <div class="brand"><div class="mark"></div><div><strong>MyHotel</strong><span>Mode d’emploi</span></div></div>
+      <input class="search" type="search" placeholder="Rechercher dans le guide" />
+      <h2>Démarrer</h2>
+      <a href="#intro">Présentation</a>
+      <a href="#roles">Rôles et comptes</a>
+      <a href="#navigation">Navigation</a>
+      <a href="#robot">Robot guide</a>
+      <a href="#ia">MyHotel IA</a>
+      <h2>Réception</h2>
+      <a href="#dashboard">Tableau de bord</a>
+      <a href="#reservations">Réservations</a>
+      <a href="#clients">Clients</a>
+      <a href="#ventes">Ventes</a>
+      <a href="#rapports">Rapports</a>
+      <a href="#chambres">Chambres</a>
+      <h2>Maison</h2>
+      <a href="#sales">Sales</a>
+      <a href="#signalements">Signalements</a>
+      <a href="#planning">Planning</a>
+      <a href="#messages">Messagerie</a>
+      <h2>Restaurant</h2>
+      <a href="#resto">Carte et service</a>
+      <h2>Direction</h2>
+      <a href="#direction">Économat, personnel, paie</a>
+      <a href="#reglages">Paramètres</a>
+      <h2>Client et site</h2>
+      <a href="#client">Espace client</a>
+      <a href="#public">Site public</a>
+    </aside>
+    <main>
+      <header class="hero" id="intro">
+        <div class="kicker">Documentation complète</div>
+        <h1>Utiliser MyHotel, écran par écran</h1>
+        <p class="lead">MyHotel est le logiciel de l’hôtel : réception, sales, restaurant, direction et espace client. Ce guide explique chaque écran, et comment le robot bleu vous montre où cliquer pendant que MyHotel IA répond dans la messagerie.</p>
+      </header>
+
+      <section id="roles">
+        <h2>Qui voit quoi</h2>
+        <p>Le menu change selon le rôle. Un réceptionniste ne voit pas la paie. Un agent des sales ne voit pas les réservations. Le propriétaire voit l’ensemble.</p>
+        <table>
+          <thead><tr><th>Rôle</th><th>Compte de démonstration</th><th>Il s’en sert pour</th></tr></thead>
+          <tbody>
+            <tr><td>Réception</td><td>receptioniste@gmail.com</td><td>Réservations, clients, caisse, rapport du jour</td></tr>
+            <tr><td>Gérance</td><td>gerant@gmail.com</td><td>Tout l’opérationnel, sans la paie ni les comptes employés</td></tr>
+            <tr><td>Sales</td><td>entretien@gmail.com</td><td>Chambres à faire, signalements, planning</td></tr>
+            <tr><td>Restaurant</td><td>restaurant@gmail.com</td><td>Commandes, carte, boissons, stock cuisine</td></tr>
+            <tr><td>Propriétaire</td><td>proprietaire@gmail.com</td><td>Tous les modules, personnel, paie, paramètres</td></tr>
+            <tr><td>Client</td><td>awa.client@gmail.com</td><td>Note, restaurant, nettoyage, messages</td></tr>
+          </tbody>
+        </table>
+        <p>Mot de passe de démonstration : <strong>password123</strong>.</p>
+        <figure class="shot">
+          <img src="captures/navigation.png" alt="Menu de la réception" />
+          <div class="fallback">Capture : menu après connexion</div>
+          <figcaption>Une fois connecté, le menu affiche le rôle. Ici, la réception.</figcaption>
+        </figure>
+      </section>
+
+      <section id="navigation">
+        <h2>Se déplacer</h2>
+        <div class="grid">
+          <article class="card"><h3>Grand écran</h3><p>Le menu est à gauche, regroupé pour le propriétaire : Vue d’ensemble, Réception, Entretien, Restaurant, Hôtel, Direction. La cloche ouvre les notifications. La photo ouvre le profil et la déconnexion.</p></article>
+          <article class="card"><h3>Téléphone</h3><p>Quatre raccourcis en bas, plus le bouton menu. Le robot reste au-dessus de cette barre. Les tableaux longs défilent de côté.</p></article>
+        </div>
+        <figure class="shot">
+          <img src="captures/navigation.png" alt="Menu latéral du propriétaire" />
+          <div class="fallback">Capture : menu du propriétaire</div>
+          <figcaption>Menu du propriétaire. Chaque bloc correspond à un métier de l’hôtel.</figcaption>
+        </figure>
+      </section>
+
+      <section id="robot">
+        <h2>Le robot guide</h2>
+        <p>Le robot blanc, en bas à droite, est toujours là avec sa bulle de discussion. Il sert quand quelqu’un est devant vous et que vous n’avez pas le temps de chercher le bouton.</p>
+        <ol class="steps">
+          <li>Touchez le robot ou la bulle bleue.</li>
+          <li>Écrivez une phrase normale, par exemple : « aide-moi à faire une réservation, j’ai un client devant moi ».</li>
+          <li>Un cadre bleu entoure le prochain geste. Le texte dit quoi cliquer ou quoi demander au client.</li>
+          <li>Suivant avance. Retour revient. Fermer la visite arrête le cadre. Cliquer le bouton encadré avance aussi.</li>
+        </ol>
+        <p>Les visites couvrent la réservation, l’annulation, la caisse, les rapports, les sales, le restaurant, la paie, l’espace client et la connexion. Les puces sous le chat lancent la visite la plus utile pour votre rôle. Sur un petit écran, le robot se réduit et reste au-dessus de la barre du bas.</p>
+        <figure class="shot">
+          <img src="captures/robot.png" alt="Robot guide et cadre bleu" />
+          <div class="fallback">Capture : robot et étape guidée</div>
+          <figcaption>Le cadre bleu montre le bouton. La carte indique l’étape et le geste.</figcaption>
+        </figure>
+      </section>
+
+      <section id="ia">
+        <h2>MyHotel IA dans la messagerie</h2>
+        <p>Ouvrez Messagerie. <strong>MyHotel IA</strong> est épinglé en haut de la liste, comme un contact permanent. Il répond aux questions, rédige un rapport à copier, et lit les chiffres réellement enregistrés : occupation, arrivées, départs, ventes du jour. Il n’invente pas un montant absent de l’hôtel.</p>
+        <ul>
+          <li>« Quel est le taux d’occupation aujourd’hui ? »</li>
+          <li>« Rédige le rapport du jour pour le propriétaire. »</li>
+          <li>« Combien d’arrivées et de départs ? »</li>
+        </ul>
+        <p>S’il reconnaît une manipulation, la réponse propose <em>Me montrer à l’écran</em> : le robot reprend alors la visite. Un client qui écrit à l’IA ne reçoit ni les chiffres de l’hôtel, ni les données d’un autre client. La clé Gemini reste dans le fichier <span class="pill">.env</span> du serveur, elle n’est pas dans le navigateur.</p>
+        <figure class="shot">
+          <img src="captures/messagerie-ia.png" alt="MyHotel IA dans la messagerie" />
+          <div class="fallback">Capture : conversation avec MyHotel IA</div>
+          <figcaption>La messagerie. MyHotel IA est épinglé en tête de cette liste, au-dessus des collègues.</figcaption>
+        </figure>
+      </section>
+
+      <section id="dashboard">
+        <h2>Tableau de bord</h2>
+        <p>L’accueil résume la journée : chambres libres, occupées, en entretien, en maintenance, arrivées, départs, clients en maison, ventes du jour. Le restaurant y voit ses commandes et ses alertes de stock. Les sales y voient l’urgence du ménage.</p>
+        <figure class="shot">
+          <img src="captures/accueil.png" alt="Tableau de bord" />
+          <div class="fallback">Capture : tableau de bord</div>
+          <figcaption>Les pastilles donnent l’état de l’hôtel sans ouvrir chaque module.</figcaption>
+        </figure>
+      </section>
+
+      <section id="reservations">
+        <h2>Réservations</h2>
+        <p>C’est l’écran du comptoir. Deux onglets : <strong>Chambres</strong> et <strong>Liste réservation</strong>.</p>
+        <h3>Créer un séjour, client devant vous</h3>
+        <ol class="steps">
+          <li>Ouvrez Réservations, onglet Chambres.</li>
+          <li>Choisissez le type. La carte indique les libres, les occupées et celles en entretien, ainsi que le tarif de départ.</li>
+          <li>Sur une chambre Disponible, touchez Réserver. Une chambre Fermée, en maintenance grave ou hors service ne se vend pas.</li>
+          <li>Saisissez nom, prénom, téléphone et numéro de CNI. Ajoutez les autres occupants si la capacité le permet.</li>
+          <li>Réglez date et heure d’arrivée, puis de départ. Le prochain créneau possible tient compte d’une heure après la libération.</li>
+          <li>La réception et la gérance peuvent poser une réduction avec un motif.</li>
+          <li>Confirmer la réservation. Générez puis imprimez les badges nominatifs.</li>
+        </ol>
+        <p>Pour chercher une chambre sur des dates précises, ouvrez un type puis Rechercher une disponibilité.</p>
+        <h3>Retrouver, modifier, annuler</h3>
+        <p>Liste réservation filtre par nom, téléphone ou statut : Confirmée, En cours, Terminée, Annulée. Le crayon modifie le séjour. Annuler demande une confirmation. Le statut En cours correspond au client déjà arrivé.</p>
+        <figure class="shot">
+          <img src="captures/reservations.png" alt="Types de chambres" />
+          <div class="fallback">Capture : types de chambres</div>
+          <figcaption>Choix du type avant d’ouvrir une chambre précise.</figcaption>
+        </figure>
+        <figure class="shot">
+          <img src="captures/reservation-form.png" alt="Formulaire de réservation" />
+          <div class="fallback">Capture : formulaire de réservation</div>
+          <figcaption>Identité du client, dates, puis confirmation.</figcaption>
+        </figure>
+      </section>
+
+      <section id="clients">
+        <h2>Clients</h2>
+        <p>La fiche client est distincte du séjour. Nouveau client crée le compte : la personne pourra ensuite se connecter à son espace. La réservation du comptoir, elle, se fait dans Réservations même si le client n’a pas encore de compte.</p>
+        <figure class="shot">
+          <img src="captures/clients.png" alt="Liste des clients" />
+          <div class="fallback">Capture : clients</div>
+          <figcaption>Liste des clients et bouton Nouveau client.</figcaption>
+        </figure>
+      </section>
+
+      <section id="ventes">
+        <h2>Ventes de la réception</h2>
+        <ol class="steps">
+          <li>Touchez un produit pour l’ajouter. Le stock et le prix sont sous le nom. Une rupture ne s’ajoute pas.</li>
+          <li>Ouvrez le panier.</li>
+          <li>Si le client est en chambre, choisissez sa chambre pour porter le montant sur sa note. Sinon, encaissez tout de suite.</li>
+          <li>Historique et Factures retrouvent les tickets. Imprimer ou Télécharger produit le PDF de l’hôtel.</li>
+        </ol>
+        <figure class="shot">
+          <img src="captures/ventes.png" alt="Caisse réception" />
+          <div class="fallback">Capture : ventes</div>
+          <figcaption>Catalogue, panier, encaissement ou note de chambre.</figcaption>
+        </figure>
+      </section>
+
+      <section id="rapports">
+        <h2>Rapports</h2>
+        <p>La réception obtient le rapport de la journée : séjours concernés, ses ventes, les ruptures de stock. La gérance et le propriétaire choisissent le type de rapport et la période, puis Imprimer ou Télécharger. Les colonnes suivent le type choisi : séjours, ventes, caisse, stock, entretien.</p>
+        <p>Pour un texte rédigé (« résumé pour la direction »), demandez-le à MyHotel IA : il s’appuie sur ces mêmes chiffres.</p>
+        <figure class="shot">
+          <img src="captures/rapports.png" alt="Écran des rapports" />
+          <div class="fallback">Capture : rapports</div>
+          <figcaption>Période, type de rapport, impression.</figcaption>
+        </figure>
+      </section>
+
+      <section id="chambres">
+        <h2>Chambres</h2>
+        <p>Le module Chambres est le catalogue : numéro, étage, tarif, photos, équipements, historique des séjours. On y consulte ou on met à jour une fiche. On n’y crée pas le séjour du client qui attend : cela reste dans Réservations.</p>
+        <figure class="shot">
+          <img src="captures/chambres.png" alt="Fiches chambres" />
+          <div class="fallback">Capture : chambres</div>
+          <figcaption>Fiches chambres, distinctes de la prise de réservation.</figcaption>
+        </figure>
+      </section>
+
+      <section id="sales">
+        <h2>Sales</h2>
+        <p>Chaque carte est une chambre à traiter. Filtrez par Urgence, Non pris en charge, En cours ou Maintenance. L’agent prend la chambre en charge, peut associer des aides, puis la marque prête. Une chambre prête redevient disponible pour la réception, après le délai prévu.</p>
+        <figure class="shot">
+          <img src="captures/sales.png" alt="Écran des sales" />
+          <div class="fallback">Capture : sales</div>
+          <figcaption>File des chambres à nettoyer ou à contrôler.</figcaption>
+        </figure>
+      </section>
+
+      <section id="signalements">
+        <h2>Signalements</h2>
+        <p>Une panne, une casse ou un oubli se signale depuis la chambre (bouton Signalement) ou depuis cet écran. Les états sont Ouvert, En attente, Résolu. L’agent voit ses signalements. La gérance suit toute la liste.</p>
+        <figure class="shot">
+          <img src="captures/signalements.png" alt="Signalements" />
+          <div class="fallback">Capture : signalements</div>
+          <figcaption>Suivi des incidents jusqu’à résolution.</figcaption>
+        </figure>
+      </section>
+
+      <section id="planning">
+        <h2>Planning</h2>
+        <p>Les tâches encore ouvertes et les affectations du personnel. La gérance répartit. L’employé consulte ce qui lui est demandé. Le planning ne remplace pas l’écran Sales : il donne la vue du travail, Sales donne le geste sur la chambre.</p>
+        <figure class="shot">
+          <img src="captures/planning.png" alt="Planning" />
+          <div class="fallback">Capture : planning</div>
+          <figcaption>Tâches et présences.</figcaption>
+        </figure>
+      </section>
+
+      <section id="messages">
+        <h2>Messagerie d’équipe</h2>
+        <p>Nouveau ouvre la liste des collègues du rôle autorisé. Un client ne voit que la réception. On peut joindre un fichier (12 Mo maximum). MyHotel IA reste séparé de ces fils : ce n’est pas un employé, c’est l’assistant.</p>
+        <figure class="shot">
+          <img src="captures/messagerie.png" alt="Messagerie" />
+          <div class="fallback">Capture : messagerie</div>
+          <figcaption>Fils entre collègues, avec l’assistant épinglé.</figcaption>
+        </figure>
+      </section>
+
+      <section id="resto">
+        <h2>Restaurant</h2>
+        <div class="grid">
+          <article class="card"><h3>Menu du jour</h3><p>Ce qui est proposé aujourd’hui. La carte publique et la vente suivent cette sélection.</p></article>
+          <article class="card"><h3>Commandes</h3><p>Les tickets à préparer et à servir. Le statut avance avec le service.</p></article>
+          <article class="card"><h3>Vente</h3><p>La caisse du restaurant. Encaissement immédiat ou report sur la chambre.</p></article>
+          <article class="card"><h3>Menu, Boisson</h3><p>La carte permanente : prix, photo, disponibilité. Un plat retiré disparaît de la vente.</p></article>
+          <article class="card"><h3>Gestion stock</h3><p>Le magasin cuisine. Sous le seuil, le plat lié ne doit plus être vendu.</p></article>
+        </div>
+        <figure class="shot">
+          <img src="captures/restaurant.png" alt="Restaurant" />
+          <div class="fallback">Capture : restaurant</div>
+          <figcaption>Carte, commandes et stock cuisine.</figcaption>
+        </figure>
+      </section>
+
+      <section id="direction">
+        <h2>Économat, personnel, paie</h2>
+        <p><strong>Économat</strong> est le stock de l’hôtel, distinct de la cuisine : quantités, seuils, mouvements. <strong>Personnel</strong> est réservé au propriétaire : création des comptes, rôle, contrat. Bannir un compte coupe l’accès et conserve l’historique. <strong>Paie</strong> reprend les montants des fiches. Vérifiez la période avant d’exporter.</p>
+        <figure class="shot">
+          <img src="captures/direction.png" alt="Écrans de direction" />
+          <div class="fallback">Capture : direction</div>
+          <figcaption>Économat, comptes employés et paie.</figcaption>
+        </figure>
+      </section>
+
+      <section id="reglages">
+        <h2>Paramètres</h2>
+        <p>Le propriétaire y met le nom commercial, la raison sociale, l’adresse, le téléphone, le NIF, le RCCM, le logo et le cachet. Ces éléments sortent sur les factures, les badges et les rapports PDF. Un logo flou ou un cachet manquant se voit donc sur tous les documents imprimés.</p>
+        <figure class="shot">
+          <img src="captures/parametres.png" alt="Paramètres de l’hôtel" />
+          <div class="fallback">Capture : paramètres</div>
+          <figcaption>Identité de l’hôtel utilisée sur les documents.</figcaption>
+        </figure>
+      </section>
+
+      <section id="client">
+        <h2>Espace client</h2>
+        <p>Après connexion, le client a son propre menu.</p>
+        <ul>
+          <li><strong>Accueil</strong> — le séjour en cours.</li>
+          <li><strong>Restaurant</strong> — commander un plat. La commande arrive à l’équipe de salle.</li>
+          <li><strong>Note</strong> — nuitées et consommations portées sur la chambre.</li>
+          <li><strong>Historique</strong> — séjours passés.</li>
+          <li><strong>Messagerie</strong> — écrire à la réception, ou à MyHotel IA.</li>
+          <li><strong>Nettoyage</strong> — demander le passage des sales.</li>
+        </ul>
+        <figure class="shot">
+          <img src="captures/client.png" alt="Espace client" />
+          <div class="fallback">Capture : espace client</div>
+          <figcaption>Le client ne voit que son séjour.</figcaption>
+        </figure>
+      </section>
+
+      <section id="public">
+        <h2>Site public</h2>
+        <p>Sans compte, le visiteur parcourt l’accueil, l’hôtel, les services, les témoignages, les chambres et la carte du restaurant. Réserver un séjour ouvre les chambres. La création de compte se fait par S’inscrire. Le robot peut aussi guider ces premiers écrans.</p>
+        <figure class="shot">
+          <img src="captures/public.png" alt="Site public" />
+          <div class="fallback">Capture : site public</div>
+          <figcaption>Vitrine, chambres et carte, avant la connexion.</figcaption>
+        </figure>
+        <div class="note">
+          <p>Pour ouvrir ce guide depuis l’hôtel en production : <strong>/documentation/</strong>. En local, le même dossier <strong>documentation</strong> s’ouvre dans le navigateur, ou via l’API sur le port 3847.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <button class="menu-btn" type="button">Sommaire</button>
+  <script src="app.js"></script>
+</body>
+</html>

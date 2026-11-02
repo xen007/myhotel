@@ -47,7 +47,7 @@ export function HotelShell({ title, subtitle, children, back, onBack, right, loa
             />
           ) : null}
           <View style={styles.headingCopy}>
-            <Text style={styles.title} numberOfLines={1}>{title}</Text>
+            <Text nativeID="guide-page" style={styles.title} numberOfLines={1}>{title}</Text>
             {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
           </View>
           {right ? <View style={styles.headingRight}>{right}</View> : null}

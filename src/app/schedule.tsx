@@ -311,11 +311,11 @@ export default function ScheduleScreen() {
       error={error}
       right={
         <>
-          <GoldBtn compact icon="plus" variant="ghost" label="Tâche" onPress={() => {
+          <GoldBtn nativeID="guide-shift-task" compact icon="plus" variant="ghost" label="Tâche" onPress={() => {
             setFormError(null);
             setJob({ title: '', assignee: staff[0]?.full_name || '', day: iso(new Date()), notes: '' });
           }} />
-          <GoldBtn compact icon="plus" label="Horaire" onPress={() => {
+          <GoldBtn nativeID="guide-shift-add" compact icon="plus" label="Horaire" onPress={() => {
             setFormError(null);
             setShift({
               staff_name: staff[0]?.full_name || '',

@@ -142,7 +142,7 @@ export function VisitHome({ data }: { data: VisitPayload }) {
                   else router.push({ pathname: '/welcome', params: { section: 'apropos' } });
                 }}
               />
-              <GoldBtn label="Réserver un séjour" variant="ghost" onPress={() => router.push('/browse')} />
+              <GoldBtn nativeID="guide-book-stay" label="Réserver un séjour" variant="ghost" onPress={() => router.push('/browse')} />
             </View>
           </View>
           <View style={[styles.heroVisual, !desktop && styles.heroVisualMobile]}>
@@ -218,7 +218,7 @@ export function VisitHome({ data }: { data: VisitPayload }) {
         <Text style={styles.ctaTitle}>Réservez votre séjour.</Text>
         <View style={styles.heroActions}>
           <GoldBtn compact={!desktop} tiny={width < Breakpoints.tablet} label="S’inscrire" onPress={() => router.push('/register')} />
-          <GoldBtn compact={!desktop} tiny={width < Breakpoints.tablet} label="Connexion" variant="ink" onPress={() => router.push('/login')} />
+          <GoldBtn nativeID="guide-login" compact={!desktop} tiny={width < Breakpoints.tablet} label="Connexion" variant="ink" onPress={() => router.push('/login')} />
         </View>
       </View>
     </View>

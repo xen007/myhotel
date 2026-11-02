@@ -1,7 +1,7 @@
 import { Redirect, usePathname, useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/box-icon';
@@ -29,6 +29,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const [panel, setPanel] = useState<Panel>('profile');
   const [menuOpen, setMenuOpen] = useState(false);
   const { items, unread, reload, mark, markAll } = useNotifications();
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-menu') setMenuOpen(true);
+      if (action === 'close-menu') setMenuOpen(false);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, []);
   const client = user?.role === 'client';
   const links = client ? CLIENT_LINKS : linksFor(user?.role);
 
@@ -53,7 +64,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   function navLink(item: (typeof links)[number]) {
     const active = pathname === item.href || (item.href !== '/home' && pathname.startsWith(item.href));
     return (
-      <Pressable key={item.href} onPress={() => go(item.href)} style={[styles.navItem, active && styles.navItemOn]}>
+      <Pressable nativeID={`guide-nav-${item.href.replace(/\//g, '')}`} key={item.href} onPress={() => go(item.href)} style={[styles.navItem, active && styles.navItemOn]}>
         {client ? null : <AppIcon name={item.icon} size={20} color={active ? Palette.gold : Palette.white} />}
         <Text numberOfLines={1} style={[styles.navLabel, active && styles.navLabelOn]}>
           {item.label}

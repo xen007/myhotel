@@ -74,6 +74,7 @@ export default function LoginScreen() {
       ) : null}
 
       <AuthField
+        nativeID="guide-email"
         icon="person"
         placeholder="Adresse e-mail"
         value={email}
@@ -84,6 +85,7 @@ export default function LoginScreen() {
         editable={!loading}
       />
       <AuthField
+        nativeID="guide-password"
         icon="lock"
         placeholder="Mot de passe"
         value={password}
@@ -108,7 +110,7 @@ export default function LoginScreen() {
         <Text style={styles.help}>Mot de passe oublié ?</Text>
       </Pressable>
 
-      <AuthButton label="Se connecter" loading={loading} onPress={onSubmit} />
+      <AuthButton nativeID="guide-login-submit" label="Se connecter" loading={loading} onPress={onSubmit} />
 
       <View style={styles.switchRow}>
         <Text style={styles.switchText}>Pas encore de compte ? </Text>

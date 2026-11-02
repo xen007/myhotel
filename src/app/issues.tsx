@@ -77,6 +77,7 @@ export default function IssuesScreen() {
       loading={loading && !data}
       error={error}>
       <FilterBar
+        searchId="guide-issue-search"
         query={query}
         onQuery={setQuery}
         queryPlaceholder="Chambre, détail, agent..."
@@ -90,12 +91,12 @@ export default function IssuesScreen() {
         ]}
       />
       <View style={styles.list}>
-        {visible.map((item) => {
+        {visible.map((item, index) => {
           const waiting = item.status === 'en_attente';
           const resolved = item.status === 'resolue';
           const badge = badgeFor(item.status);
           return (
-            <View key={item.id} style={[styles.card, resolved && styles.cardDone, { width: cardWidth }]}>
+            <View nativeID={index === 0 ? 'guide-issue-card' : undefined} key={item.id} style={[styles.card, resolved && styles.cardDone, { width: cardWidth }]}>
               <View style={styles.top}>
                 <View style={styles.roomBadge}>
                   <Text style={styles.roomNo}>{item.room_number}</Text>
@@ -129,6 +130,7 @@ export default function IssuesScreen() {
                     />
                   ) : null}
                   <GoldBtn
+                    nativeID={index === 0 ? 'guide-issue-resolve' : undefined}
                     tiny
                     icon={resolved ? 'error-circle' : 'check-circle'}
                     label={saving === item.id ? '…' : resolved ? 'Rouvrir' : 'Résoudre'}

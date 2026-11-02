@@ -227,6 +227,17 @@ export default function StockScreen() {
     setForm(emptyForm(first ? String(first.id) : '', category ? category.name : ''));
   }
 
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-stock') openCreate();
+      if (action === 'close-stock') setForm(null);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, [activeWarehouses, activeCategories]);
+
   function openEdit(item: Product) {
     setFormError(null);
     setForm({
@@ -518,10 +529,10 @@ export default function StockScreen() {
       error={error}
       right={
         <>
-          <GoldBtn compact icon="cabinet" label="Magasin" variant="ghost" onPress={() => { setFormError(null); setWarehouseName(''); setEditingStore(null); setStoresOpen(true); }} />
-          <GoldBtn compact icon="food-menu" label="Catégorie" variant="ghost" onPress={() => { setFormError(null); setCategoryName(''); setEditingCategory(null); setCategoriesOpen(true); }} />
-          <GoldBtn compact icon="time" label="Historique" variant="ghost" onPress={() => { setHistoryQuery(''); setHistoryOpen(true); }} />
-          <GoldBtn compact icon="plus" label="Ajouter" onPress={openCreate} />
+          <GoldBtn nativeID="guide-stock-store" compact icon="cabinet" label="Magasin" variant="ghost" onPress={() => { setFormError(null); setWarehouseName(''); setEditingStore(null); setStoresOpen(true); }} />
+          <GoldBtn nativeID="guide-stock-category" compact icon="food-menu" label="Catégorie" variant="ghost" onPress={() => { setFormError(null); setCategoryName(''); setEditingCategory(null); setCategoriesOpen(true); }} />
+          <GoldBtn nativeID="guide-stock-history" compact icon="time" label="Historique" variant="ghost" onPress={() => { setHistoryQuery(''); setHistoryOpen(true); }} />
+          <GoldBtn nativeID="guide-stock-add" compact icon="plus" label="Ajouter" onPress={openCreate} />
         </>
       }>
       {listError ? <Text style={styles.inlineError}>{listError}</Text> : null}

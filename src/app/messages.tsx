@@ -56,6 +56,7 @@ type ChatMessage = {
 
 type PendingFile = { name: string; mime: string; size: number; data: string };
 type Payload = { contacts: Contact[]; threads: Thread[]; messages: ChatMessage[] };
+type AiMessage = { id: number; role: 'user' | 'assistant'; body: string; tour?: string | null; created_at: string };
 
 function pendingUri(file: PendingFile) {
   return `data:${file.mime};base64,${file.data}`;
@@ -130,9 +131,23 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
   const [picker, setPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<ChatMessage | null>(null);
+  const [aiOn, setAiOn] = useState(false);
+  const [aiMessages, setAiMessages] = useState<AiMessage[]>([]);
+  const [aiBusy, setAiBusy] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const isWide = width >= Breakpoints.tablet;
-  const inChat = !isWide && (threadId !== null || !!peer);
+  const inChat = !isWide && (threadId !== null || !!peer || aiOn);
+
+  const loadAi = useCallback(async () => {
+    if (!token) return;
+    const payload = await pmsGet<{ messages: AiMessage[] }>(token, 'assistant');
+    setAiMessages(payload.messages || []);
+  }, [token]);
+
+  useEffect(() => {
+    if (!aiOn) return;
+    void loadAi().catch(() => undefined);
+  }, [aiOn, loadAi]);
 
   const load = useCallback(
     async (silent = false) => {
@@ -184,9 +199,17 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
   useEffect(() => {
     const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
     return () => clearTimeout(t);
-  }, [messages.length, threadId]);
+  }, [messages.length, threadId, aiMessages.length, aiOn]);
+
+  function openAi() {
+    setAiOn(true);
+    setThreadId(null);
+    setPeer(null);
+    setPicker(false);
+  }
 
   function startChat(contact: Contact) {
+    setAiOn(false);
     const existing = threads.find((item) => item.other?.id === contact.id && item.last_body);
     setPicker(false);
     setPickerQuery('');
@@ -235,7 +258,44 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
     setPending(file);
   }
 
+  async function sendAi() {
+    if (!token || aiBusy) return;
+    const text = draft.trim();
+    if (!text) return;
+    setAiBusy(true);
+    setDraft('');
+    try {
+      const next = await pmsPost<{ messages: AiMessage[]; reply: string; tour?: string | null }>(
+        token,
+        'assistant',
+        { body: text },
+        60000,
+      );
+      setAiMessages(next.messages || []);
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('myhotel-guide-phrase', { detail: { text, tour: next.tour } }));
+      }
+    } catch (err) {
+      setDraft(text);
+      setError(err instanceof Error ? err.message : 'Assistant indisponible.');
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('myhotel-guide-phrase', { detail: { text } }));
+      }
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function showTour(tour?: string | null) {
+    if (!tour || Platform.OS !== 'web' || typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('myhotel-guide-start', { detail: { tour } }));
+  }
+
   async function send() {
+    if (aiOn) {
+      await sendAi();
+      return;
+    }
     if (!token || saving) return;
     if (!threadId && !peer) {
       setPicker(true);
@@ -277,25 +337,33 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
 
   if (ready && !user) return <Redirect href="/welcome" />;
 
-  const showList = isWide || (threadId === null && !peer);
-  const showChat = isWide || threadId !== null || !!peer;
-  const canSend = (!!draft.trim() || !!pending) && !saving;
+  const showList = isWide || (threadId === null && !peer && !aiOn);
+  const showChat = isWide || threadId !== null || !!peer || aiOn;
+  const canSend = aiOn ? !!draft.trim() && !aiBusy : (!!draft.trim() || !!pending) && !saving;
   const ChatWrap = Platform.OS === 'web' ? View : KeyboardAvoidingView;
 
   const listPane = (
     <View style={[styles.pane, isWide ? styles.listPane : styles.flex, styles.listPaneInner]}>
       <View style={styles.listHead}>
         <Text style={styles.paneTitle}>Conversations</Text>
-        <GoldBtn compact icon="plus" label="Nouveau" onPress={() => setPicker(true)} />
+        <GoldBtn nativeID="guide-new-thread" compact icon="plus" label="Nouveau" onPress={() => setPicker(true)} />
       </View>
       <TextInput value={query} onChangeText={setQuery} placeholder="Rechercher..." style={styles.search} />
       <ScrollView style={styles.flex} contentContainerStyle={[styles.threadList, styles.threadListFab]} keyboardShouldPersistTaps="handled">
+        <Pressable nativeID="guide-ai-thread" onPress={openAi} style={[styles.row, aiOn && styles.rowOn]}>
+          <Avatar ai name="MyHotel IA" />
+          <View style={styles.rowCopy}>
+            <Text style={styles.rowName} numberOfLines={1}>MyHotel IA</Text>
+            <Text style={styles.rowPreview} numberOfLines={1}>Guide pas à pas, sans données confidentielles</Text>
+          </View>
+        </Pressable>
         {rows.map((item) => {
-          const on = item.id === threadId;
+          const on = item.id === threadId && !aiOn;
           return (
             <Pressable
               key={item.id}
               onPress={() => {
+                setAiOn(false);
                 setPeer(null);
                 setThreadId(item.id);
               }}
@@ -334,18 +402,21 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
             onPress={() => {
               setThreadId(null);
               setPeer(null);
+              setAiOn(false);
             }}
             hitSlop={10}
             style={styles.back}>
             <AppIcon name="chevron-left" size={22} color={Palette.ink} />
           </Pressable>
         ) : null}
-        {other ? <Avatar name={other.full_name} photo={other.photo} size={40} /> : null}
+        {aiOn ? <Avatar ai name="MyHotel IA" size={40} /> : other ? <Avatar name={other.full_name} photo={other.photo} size={40} /> : null}
         <View style={styles.chatHeadCopy}>
           <Text style={styles.chatName} numberOfLines={1}>
-            {other?.full_name ?? 'Sélectionnez une conversation'}
+            {aiOn ? 'MyHotel IA' : other?.full_name ?? 'Sélectionnez une conversation'}
           </Text>
-          {other?.role ? (
+          {aiOn ? (
+            <Text style={styles.chatRole} numberOfLines={1}>Guide · il ne donne aucune donnée</Text>
+          ) : other?.role ? (
             <Text style={styles.chatRole} numberOfLines={1}>
               {ROLE_LABEL[other.role as UserRole] ?? other.role}
             </Text>
@@ -358,13 +429,35 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
         contentContainerStyle={styles.bubbles}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive">
-        {!other ? (
+        {!other && !aiOn ? (
           <View style={styles.idle}>
             <Text style={styles.idleText}>Choisissez ou démarrez une conversation</Text>
           </View>
         ) : null}
-        {other && !messages.length && !pending ? <Text style={styles.empty}>Écrivez le premier message.</Text> : null}
-        {other
+        {aiOn && !aiMessages.length ? (
+          <Text style={styles.empty}>Demande comment faire, pas les chiffres. Exemple : « montre-moi une réservation, zone par zone ».</Text>
+        ) : null}
+        {aiOn
+          ? aiMessages.map((item) => {
+              const mine = item.role === 'user';
+              return (
+                <View key={item.id} style={[styles.bubbleWrap, mine && styles.bubbleWrapMine]}>
+                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
+                    <Text style={styles.bubbleText}>{item.body}</Text>
+                    {item.tour && !mine ? (
+                      <Pressable onPress={() => showTour(item.tour)} style={styles.aiShow}>
+                        <Text style={styles.aiShowText}>Me montrer à l’écran</Text>
+                      </Pressable>
+                    ) : null}
+                    <Text style={[styles.bubbleMeta, mine && styles.bubbleMetaMine]}>{prettyChatTime(item.created_at)}</Text>
+                  </View>
+                </View>
+              );
+            })
+          : null}
+        {aiBusy ? <Text style={styles.empty}>MyHotel IA rédige la réponse…</Text> : null}
+        {other && !aiOn && !messages.length && !pending ? <Text style={styles.empty}>Écrivez le premier message.</Text> : null}
+        {!aiOn && other
           ? messages.map((item) => {
               const mine = Number(item.sender_id) === Number(user?.id);
               return (
@@ -382,9 +475,10 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
       {pending ? <PendingPreview file={pending} onClear={() => setPending(null)} /> : null}
       <View style={styles.composer}>
         <TextInput
+          nativeID="guide-composer"
           value={draft}
           onChangeText={setDraft}
-          placeholder="Votre message..."
+          placeholder={aiOn ? 'Montre-moi une étape…' : 'Votre message...'}
           style={styles.composerInput}
           multiline
           blurOnSubmit={false}
@@ -395,9 +489,11 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
             }
           }}
         />
+        {aiOn ? null : (
         <Pressable onPress={() => void attach()} style={styles.clip} accessibilityLabel="Joindre un fichier">
           <ClipIcon size={20} />
         </Pressable>
+        )}
         <Pressable onPress={() => void send()} disabled={!canSend} style={[styles.send, !canSend && styles.sendOff]}>
           <AppIcon name="chevron-right" size={22} color={Palette.ink} />
         </Pressable>
@@ -466,7 +562,17 @@ export function MessageDesk({ clientDesk = false }: { clientDesk?: boolean }) {
   );
 }
 
-function Avatar({ name, photo, size = 48 }: { name?: string | null; photo?: string | null; size?: number }) {
+function Avatar({ name, photo, size = 48, ai = false }: { name?: string | null; photo?: string | null; size?: number; ai?: boolean }) {
+  if (ai) {
+    return (
+      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#d4af37', alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: size * 0.52, height: size * 0.34, borderRadius: size * 0.12, backgroundColor: '#141622', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+          <View style={{ width: Math.max(4, size * 0.12), height: Math.max(4, size * 0.12), borderRadius: 6, backgroundColor: '#d4af37' }} />
+          <View style={{ width: Math.max(4, size * 0.12), height: Math.max(4, size * 0.12), borderRadius: 6, backgroundColor: '#d4af37' }} />
+        </View>
+      </View>
+    );
+  }
   const initial = (name || '?').trim().slice(0, 1).toUpperCase();
   const uri = mediaUrl(photo);
   if (uri) {
@@ -679,6 +785,8 @@ const styles = StyleSheet.create({
   rowName: { color: Palette.ink, fontWeight: '800', fontSize: 15 },
   rowPreview: { color: Palette.ink, opacity: 0.5, fontSize: 12, marginTop: 4 },
   empty: { color: Palette.ink, opacity: 0.5, padding: 20, textAlign: 'center' },
+  aiShow: { alignSelf: 'flex-start', marginTop: 8, backgroundColor: '#d4af37', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  aiShowText: { color: '#141622', fontSize: 12, fontWeight: '800' },
   idle: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', minHeight: 80 },
   idleText: { color: Palette.ink, opacity: 0.4, fontSize: 15, textAlign: 'center' },
   threadList: { paddingBottom: 12, flexGrow: 1 },
@@ -721,7 +829,7 @@ const styles = StyleSheet.create({
   bubbleText: { color: Palette.ink, fontSize: 15, lineHeight: 22 },
   bubbleMeta: { color: Palette.ink, opacity: 0.45, fontSize: 10, fontWeight: '700' },
   bubbleMetaMine: { textAlign: 'right' },
-  thumb: { width: 220, height: 160, borderRadius: 12, backgroundColor: Palette.ink },
+  thumb: { width: '100%', maxWidth: 220, height: 160, borderRadius: 12, backgroundColor: Palette.ink },
   previewImage: { width: '100%', height: 360, borderRadius: 12, backgroundColor: Palette.ink },
   docCard: {
     flexDirection: 'row',
@@ -751,7 +859,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    padding: 12,
+    padding: 8,
     flexShrink: 0,
     backgroundColor: Palette.white,
     borderTopWidth: 1,
@@ -760,8 +868,9 @@ const styles = StyleSheet.create({
   },
   composerInput: {
     flex: 1,
-    minHeight: 48,
-    maxHeight: 120,
+    minWidth: 0,
+    minHeight: 40,
+    maxHeight: 88,
     borderWidth: 1,
     borderColor: 'rgba(20,22,34,0.12)',
     borderRadius: 12,

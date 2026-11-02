@@ -224,6 +224,7 @@ export default function RoomFormScreen() {
       error={null}
       right={
         <GoldBtn
+          nativeID="guide-room-save"
           compact
           icon="check-circle"
           label={saving ? 'Enregistrement…' : 'Enregistrer'}
@@ -232,7 +233,7 @@ export default function RoomFormScreen() {
       }>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.grid}>
-        <Field label="Numéro" value={form.number} onChange={(number) => setForm({ ...form, number })} />
+        <Field nativeID="guide-room-number" label="Numéro" value={form.number} onChange={(number) => setForm({ ...form, number })} />
         <View style={styles.field}>
           <Text style={styles.label}>Type</Text>
           {Platform.OS === 'web' ? (
@@ -349,14 +350,16 @@ function Field({
   value,
   onChange,
   keyboard,
+  nativeID,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   keyboard?: 'numeric';
+  nativeID?: string;
 }) {
   return (
-    <View style={styles.field}>
+    <View nativeID={nativeID} style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput value={value} onChangeText={onChange} keyboardType={keyboard} style={styles.input} />
     </View>

@@ -84,7 +84,7 @@ export function BottomTabBar({
         {tabs.map((item) => {
           const active = pathname === item.href || (item.href !== '/home' && pathname.startsWith(item.href));
           return (
-            <Pressable key={item.href} onPress={() => onNavigate(item.href)} style={styles.tab}>
+            <Pressable nativeID={`guide-tab-${item.href.replace(/\//g, '')}`} key={item.href} onPress={() => onNavigate(item.href)} style={styles.tab}>
               <View style={[styles.iconWrap, active && styles.iconWrapOn, !active && styles.iconWrapOff]}>
                 <AppIcon name={item.icon} size={22} color={active ? Palette.ink : Palette.ink} />
               </View>
@@ -94,7 +94,7 @@ export function BottomTabBar({
             </Pressable>
           );
         })}
-        <Pressable onPress={onMenu} style={styles.tab}>
+        <Pressable nativeID="guide-menu" onPress={onMenu} style={styles.tab}>
           <View style={[styles.iconWrap, menuOpen && styles.iconWrapOn, !menuOpen && styles.iconWrapOff]}>
             <Hamburger color={Palette.ink} size={22} />
           </View>

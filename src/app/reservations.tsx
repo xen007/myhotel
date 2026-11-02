@@ -1,6 +1,6 @@
 import { Redirect, useRouter, type Href } from 'expo-router';
 import { Image } from 'expo-image';
-import { createElement, useEffect, useMemo, useState } from 'react';
+import { createElement, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -135,6 +135,7 @@ function TypeCard({
   from,
   width,
   onPress,
+  nativeID,
 }: {
   name: string;
   icon: BoxIconName;
@@ -145,10 +146,12 @@ function TypeCard({
   from: number;
   width: number;
   onPress: () => void;
+  nativeID?: string;
 }) {
   const [hover, setHover] = useState(false);
   return (
     <Pressable
+      nativeID={nativeID}
       onPress={onPress}
       onHoverIn={() => setHover(true)}
       onHoverOut={() => setHover(false)}
@@ -235,15 +238,17 @@ function StayAmount({ row }: { row: StayRow }) {
   onChange,
   type = 'text',
   compact = false,
+  nativeID,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: 'text' | 'tel' | 'date' | 'time' | 'number';
   compact?: boolean;
+  nativeID?: string;
 }) {
   return (
-    <View style={[styles.field, compact && styles.fieldCompact]}>
+    <View nativeID={nativeID} style={[styles.field, compact && styles.fieldCompact]}>
       <Text style={styles.fieldLabel}>{label}</Text>
       {Platform.OS === 'web' && (type === 'date' || type === 'time')
         ? createElement('input', {
@@ -324,6 +329,69 @@ export default function ReservationsScreen() {
   const rooms = data?.rooms ?? [];
   const stays = data?.reservations ?? [];
   const issues = data?.issues ?? [];
+  const roomsRef = useRef(rooms);
+  const typesRef = useRef<{ name: string }[]>([]);
+  const bookingRef = useRef(booking);
+  roomsRef.current = rooms;
+  bookingRef.current = booking;
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'show-list') {
+        setView('sejours');
+        setBooking(null);
+        return;
+      }
+      if (action === 'show-rooms') {
+        setView('chambres');
+        setType(null);
+        setBooking(null);
+        return;
+      }
+      if (action === 'open-type') {
+        setView('chambres');
+        setBooking(null);
+        const first = typesRef.current[0];
+        if (first) setType(first.name);
+        return;
+      }
+      if (action === 'close-book') {
+        setBooking(null);
+        return;
+      }
+      if (action === 'open-book') {
+        if (bookingRef.current) return;
+        const list = roomsRef.current;
+        const room =
+          list.find((item) => item.bucket === 'disponible' && !isGraveMaintenance(item) && !isOutOfService(item)) ||
+          list.find((item) => !isGraveMaintenance(item) && !isOutOfService(item));
+        if (!room) return;
+        const freeDate = room.next_free_date || ymd();
+        const freeTime = room.next_free_time || '14:00';
+        setView('chambres');
+        setType(isLightMaintenance(room) ? LIGHT_CATEGORY : room.type);
+        setEditingId(null);
+        setSavedId(null);
+        setStep('form');
+        setFormError(null);
+        setBooking(room);
+        setGuest(emptyPerson());
+        setCompanions([]);
+        setCheckIn(freeDate);
+        setCheckInTime(freeTime > '14:00' ? freeTime : '14:00');
+        setCheckOut(addDays(freeDate, 1));
+        setCheckOutTime('12:00');
+        setDiscount('');
+        setDiscountReason('');
+        setBadges([]);
+      }
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, []);
+
   const types = useMemo(() => {
     const map = new Map<string, RoomRow[]>();
     rooms.forEach((room) => {
@@ -357,6 +425,7 @@ export default function ReservationsScreen() {
     }
     return catalog;
   }, [rooms]);
+  typesRef.current = types;
 
   if (ready && !user) return <Redirect href="/welcome" />;
 
@@ -609,7 +678,7 @@ export default function ReservationsScreen() {
     }
   }
 
-  function StayActions({ row }: { row: StayRow }) {
+  function StayActions({ row, mark }: { row: StayRow; mark?: boolean }) {
     return (
       <View style={styles.actionBtns}>
         <Pressable
@@ -649,7 +718,7 @@ export default function ReservationsScreen() {
               <AppIcon name="x-circle" size={18} color={Palette.white} />
             </Pressable>
           ) : (
-            <GoldBtn tiny icon="x-circle" label="Annuler" variant="ghost" onPress={() => setPendingCancel(row)} />
+            <GoldBtn nativeID={mark ? 'guide-cancel-stay' : undefined} tiny icon="x-circle" label="Annuler" variant="ghost" onPress={() => setPendingCancel(row)} />
           )
         ) : null}
       </View>
@@ -671,6 +740,7 @@ export default function ReservationsScreen() {
         right={
           <View style={styles.tabs}>
             <GoldBtn
+              nativeID="guide-view-rooms"
               tiny
               label="Chambres"
               variant={view === 'chambres' ? 'gold' : 'ghost'}
@@ -682,6 +752,7 @@ export default function ReservationsScreen() {
               }}
             />
             <GoldBtn
+              nativeID="guide-view-stays"
               tiny
               label="Liste réservation"
               variant={view === 'sejours' ? 'gold' : 'ghost'}
@@ -692,6 +763,7 @@ export default function ReservationsScreen() {
         {view === 'sejours' ? (
           <>
             <FilterBar
+              searchId="guide-stay-search"
               query={query}
               onQuery={setQuery}
               queryPlaceholder="Rechercher client, chambre..."
@@ -708,7 +780,7 @@ export default function ReservationsScreen() {
             {listError ? <Text style={styles.formError}>{listError}</Text> : null}
             {isMobile ? (
               <View style={styles.stayList}>
-                {visibleStays.map((row) => (
+                {visibleStays.map((row, index) => (
                   <View key={row.id} style={styles.stayCard}>
                     <View style={styles.stayCardHead}>
                       <View style={styles.flex}>
@@ -727,7 +799,7 @@ export default function ReservationsScreen() {
                       {prettyWhen(row.check_in, row.check_in_time)} → {prettyWhen(row.check_out, row.check_out_time)}
                     </Text>
                     <StayAmount row={row} />
-                    <StayActions row={row} />
+                    <StayActions row={row} mark={index === 0} />
                   </View>
                 ))}
               </View>
@@ -764,7 +836,7 @@ export default function ReservationsScreen() {
                       <StayAmount row={row} />
                     </View>
                     <View style={[styles.td, styles.colActions]}>
-                      <StayActions row={row} />
+                      <StayActions row={row} mark={index === 0} />
                     </View>
                   </View>
                 ))}
@@ -777,11 +849,12 @@ export default function ReservationsScreen() {
           <>
             {!type ? (
           <View style={styles.typeList}>
-            {types.map((item) => {
+            {types.map((item, index) => {
               const meta = typeMeta(item.name, item.capacity);
               return (
                 <TypeCard
                   key={item.name}
+                  nativeID={index === 0 ? 'guide-room-type' : undefined}
                   name={item.name}
                   icon={meta.icon}
                   total={item.rooms.length}
@@ -839,11 +912,12 @@ export default function ReservationsScreen() {
               </View>
             </View>
             <View style={styles.roomGrid}>
-              {visibleRooms.map((room) => (
+              {visibleRooms.map((room, roomIndex) => (
                 <RoomCard
                   key={room.id}
                   room={room}
                   width={roomCardWidth}
+                  markBook={roomIndex === visibleRooms.findIndex((item) => !isGraveMaintenance(item) && !isOutOfService(item))}
                   issueCount={issues.filter((item) => item.room_number === room.number && item.status !== 'resolue').length}
                   onBook={() => openBook(room)}
                   onDetails={() => router.push(`/rooms/${room.id}` as Href)}
@@ -980,10 +1054,11 @@ export default function ReservationsScreen() {
                 <>
                   <Text style={styles.sectionTitle}>Client titulaire</Text>
                   <View style={styles.formGrid}>
-                    <Field label="Nom" value={guest.last_name} onChange={(last_name) => setGuest({ ...guest, last_name })} />
-                    <Field label="Prénom" value={guest.first_name} onChange={(first_name) => setGuest({ ...guest, first_name })} />
-                    <Field label="Téléphone" type="tel" value={guest.phone} onChange={(phone) => setGuest({ ...guest, phone })} />
+                    <Field nativeID="guide-guest-name" label="Nom" value={guest.last_name} onChange={(last_name) => setGuest({ ...guest, last_name })} />
+                    <Field nativeID="guide-guest-first" label="Prénom" value={guest.first_name} onChange={(first_name) => setGuest({ ...guest, first_name })} />
+                    <Field nativeID="guide-guest-phone" label="Téléphone" type="tel" value={guest.phone} onChange={(phone) => setGuest({ ...guest, phone })} />
                     <Field
+                      nativeID="guide-guest-doc"
                       label="N° carte nationale d’identité"
                       value={guest.document_id}
                       onChange={(document_id) => setGuest({ ...guest, document_id })}
@@ -991,11 +1066,11 @@ export default function ReservationsScreen() {
                   </View>
 
                   <Text style={styles.sectionTitle}>Date et heure</Text>
-                  <View style={styles.formGrid}>
-                    <Field label="Arrivée — date" type="date" value={checkIn} onChange={setCheckIn} />
-                    <Field label="Arrivée — heure" type="time" value={checkInTime} onChange={setCheckInTime} />
-                    <Field label="Départ — date" type="date" value={checkOut} onChange={setCheckOut} />
-                    <Field label="Départ — heure" type="time" value={checkOutTime} onChange={setCheckOutTime} />
+                  <View nativeID="guide-dates" style={styles.formGrid}>
+                    <Field nativeID="guide-in-date" label="Arrivée — date" type="date" value={checkIn} onChange={setCheckIn} />
+                    <Field nativeID="guide-in-time" label="Arrivée — heure" type="time" value={checkInTime} onChange={setCheckInTime} />
+                    <Field nativeID="guide-out-date" label="Départ — date" type="date" value={checkOut} onChange={setCheckOut} />
+                    <Field nativeID="guide-out-time" label="Départ — heure" type="time" value={checkOutTime} onChange={setCheckOutTime} />
                   </View>
 
                   {capacity > 1 ? (
@@ -1063,6 +1138,7 @@ export default function ReservationsScreen() {
                   ) : null}
 
                   <GoldBtn
+                    nativeID="guide-confirm"
                     icon={editingId ? 'edit' : 'check-circle'}
                     label={saving ? 'Enregistrement…' : editingId ? 'Enregistrer les modifications' : 'Confirmer la réservation'}
                     onPress={() => void confirm()}
@@ -1175,6 +1251,7 @@ function LineBtn({
   disabled,
   gold,
   badge,
+  nativeID,
 }: {
   icon: BoxIconName;
   label: string;
@@ -1182,9 +1259,11 @@ function LineBtn({
   disabled?: boolean;
   gold?: boolean;
   badge?: number;
+  nativeID?: string;
 }) {
   return (
     <Pressable
+      nativeID={nativeID}
       disabled={disabled}
       onPress={onPress}
       style={[styles.lineBtn, gold ? styles.lineBtnGold : styles.lineBtnGhost, disabled && styles.lineBtnOff]}>
@@ -1208,6 +1287,7 @@ function RoomCard({
   onBook,
   onDetails,
   onIssues,
+  markBook,
 }: {
   room: RoomRow;
   width: number;
@@ -1215,6 +1295,7 @@ function RoomCard({
   onBook: () => void;
   onDetails: () => void;
   onIssues: () => void;
+  markBook?: boolean;
 }) {
   const label = roomBucketLabel(room);
   return (
@@ -1247,6 +1328,7 @@ function RoomCard({
         <Text style={styles.roomPrice}>{money(room.price_night)} / nuit</Text>
         <View style={styles.roomActions}>
           <LineBtn
+            nativeID={markBook ? 'guide-book' : undefined}
             icon="calendar"
             label={isGraveMaintenance(room) || isOutOfService(room) ? 'Fermée' : 'Réserver'}
             disabled={isGraveMaintenance(room) || isOutOfService(room)}

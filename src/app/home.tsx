@@ -35,6 +35,7 @@ function StaffHome() {
       right={
         receptionist && token ? (
           <GoldBtn
+            nativeID="guide-day-report"
             tiny
             icon="download"
             label={reportBusy ? 'Préparation…' : 'Mon rapport'}

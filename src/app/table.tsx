@@ -20,7 +20,7 @@ export default function TableScreen() {
     <HotelShell
       title="Restaurant"
       fill
-      right={<GoldBtn compact icon="cart" label={cartCount ? `Panier ${cartCount}` : 'Panier'} onPress={() => openCart.current()} />}>
+      right={<GoldBtn nativeID="guide-table-cart" compact icon="cart" label={cartCount ? `Panier ${cartCount}` : 'Panier'} onPress={() => openCart.current()} />}>
       <ClientSpace view="table" onCart={onCart} />
     </HotelShell>
   );

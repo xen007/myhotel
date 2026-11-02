@@ -6,6 +6,7 @@ const { DATA_DIR } = require('./db');
 const { writeAudit, actorIdentity } = require('./audit');
 const { pushNotice, notifyMenuLow, notifyGoodLow } = require('./notify');
 const { buildBrandedPdf } = require('./pdf-brand');
+const { askAssistant } = require('./assistant');
 
 const CHAT_DIR = path.join(DATA_DIR, 'chat');
 const MAX_CHAT_FILE = 12 * 1024 * 1024;
@@ -2659,6 +2660,49 @@ async function handlePms(req, res, ctx) {
       items = items.filter((item) => item.author === actor.full_name);
     }
     ok(res, { items });
+    return true;
+  }
+
+  if (method === 'GET' && pathName === '/pms/assistant') {
+    const messages = await db.all(
+      'SELECT id, role, body, tour, created_at FROM assistant_messages WHERE user_id = ? ORDER BY id',
+      [actor.id],
+    );
+    ok(res, { messages });
+    return true;
+  }
+
+  if (method === 'POST' && pathName === '/pms/assistant') {
+    const body = await readBody(req);
+    const text = String(body.body || body.message || '').trim().slice(0, 2000);
+    if (!text) {
+      fail(res, 'Écris une question.');
+      return true;
+    }
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    await db.run(
+      'INSERT INTO assistant_messages (user_id, role, body, tour, created_at) VALUES (?,?,?,?,?)',
+      [actor.id, 'user', text, null, now],
+    );
+    const history = await db.all(
+      'SELECT role, body FROM assistant_messages WHERE user_id = ? ORDER BY id DESC LIMIT 8',
+      [actor.id],
+    );
+    const answer = await askAssistant({
+      actor,
+      message: text,
+      history: history.reverse().slice(0, -1),
+    });
+    const reply = String(answer.reply || '').slice(0, 4000);
+    await db.run(
+      'INSERT INTO assistant_messages (user_id, role, body, tour, created_at) VALUES (?,?,?,?,?)',
+      [actor.id, 'assistant', reply, answer.tour, new Date().toISOString().slice(0, 19).replace('T', ' ')],
+    );
+    const messages = await db.all(
+      'SELECT id, role, body, tour, created_at FROM assistant_messages WHERE user_id = ? ORDER BY id',
+      [actor.id],
+    );
+    ok(res, { reply, tour: answer.tour, messages });
     return true;
   }
 

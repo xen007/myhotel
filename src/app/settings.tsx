@@ -113,6 +113,7 @@ export default function SettingsScreen() {
       error={error}
       right={
         <GoldBtn
+          nativeID="guide-settings-save"
           compact
           icon="check-circle"
           label={saving ? 'Enregistrement…' : 'Enregistrer'}
@@ -120,7 +121,7 @@ export default function SettingsScreen() {
         />
       }>
       <View style={styles.grid}>
-        <Field label="Nom commercial" value={company.name} onChange={(name) => setCompany({ ...company, name })} />
+        <Field nativeID="guide-settings-name" label="Nom commercial" value={company.name} onChange={(name) => setCompany({ ...company, name })} />
         <Field
           label="Raison sociale"
           value={company.legal_name ?? ''}
@@ -154,13 +155,15 @@ function Field({
   label,
   value,
   onChange,
+  nativeID,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  nativeID?: string;
 }) {
   return (
-    <View style={styles.field}>
+    <View nativeID={nativeID} style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput value={value} onChangeText={onChange} placeholder={label} style={styles.input} />
     </View>

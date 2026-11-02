@@ -25,6 +25,7 @@ type AuthFieldProps = {
   textContentType?: TextInputProps['textContentType'];
   editable?: boolean;
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
+  nativeID?: string;
 };
 
 export function AuthField({
@@ -38,6 +39,7 @@ export function AuthField({
   autoComplete,
   textContentType,
   editable = true,
+  nativeID,
   onSubmitEditing,
 }: AuthFieldProps) {
   const { height } = useWindowDimensions();
@@ -47,6 +49,7 @@ export function AuthField({
 
   return (
     <Pressable
+      nativeID={nativeID}
       onHoverIn={() => setHover(true)}
       onHoverOut={() => setHover(false)}
       style={[styles.wrap, compact && styles.wrapCompact, hover && styles.wrapHover]}>

@@ -69,6 +69,7 @@ export function GoldBtn({
   tiny,
   block,
   disabled,
+  nativeID,
 }: {
   label: string;
   onPress: () => void;
@@ -78,6 +79,7 @@ export function GoldBtn({
   tiny?: boolean;
   block?: boolean;
   disabled?: boolean;
+  nativeID?: string;
 }) {
   const [hover, setHover] = useState(false);
   const tone = variant === 'ink' ? styles.btnInk : variant === 'ghost' ? styles.btnGhost : styles.btnGold;
@@ -87,6 +89,7 @@ export function GoldBtn({
 
   return (
     <Pressable
+      nativeID={nativeID}
       onHoverIn={() => setHover(true)}
       onHoverOut={() => setHover(false)}
       disabled={disabled}

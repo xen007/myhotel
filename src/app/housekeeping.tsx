@@ -263,6 +263,7 @@ export default function HousekeepingScreen() {
   return (
     <HotelShell title="Sales" loading={loading && !data} error={error}>
       <FilterBar
+        searchId="guide-hk-search"
         query={query}
         onQuery={setQuery}
         queryPlaceholder="Rechercher une chambre..."
@@ -278,13 +279,13 @@ export default function HousekeepingScreen() {
       />
 
       <View style={styles.grid}>
-        {visible.map((task) => {
+        {visible.map((task, index) => {
           const room = roomMap.get(task.room_number);
           const status = cardStatus(task, room);
           const lead = task.lead_name || task.attendant;
           const helpersNames = (task.helpers ?? []).filter(Boolean);
           return (
-            <View key={`${task.id}-${task.room_number}`} style={[styles.card, { width: cardWidth }]}>
+            <View nativeID={index === 0 ? 'guide-hk-card' : undefined} key={`${task.id}-${task.room_number}`} style={[styles.card, { width: cardWidth }]}>
               <View style={styles.photoWrap}>
                 <Image source={{ uri: room?.photo }} style={styles.photo} contentFit="cover" />
                 {canHistory ? (

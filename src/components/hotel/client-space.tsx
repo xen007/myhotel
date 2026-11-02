@@ -563,7 +563,7 @@ export function ClientSpace({ view, onCart, preview }: { view?: TabId; onCart?: 
             {!desk.length ? <Text style={styles.meta}>Écrivez à la réception. Votre message apparaît ici.</Text> : null}
           </ScrollView>
           <View style={styles.composer}>
-            <TextInput value={draft} onChangeText={setDraft} placeholder="Votre message..." placeholderTextColor="rgba(20,22,34,0.45)" style={styles.composerInput} multiline />
+            <TextInput nativeID="guide-desk-input" value={draft} onChangeText={setDraft} placeholder="Votre message..." placeholderTextColor="rgba(20,22,34,0.45)" style={styles.composerInput} multiline />
             <Pressable onPress={() => void sendDesk()} style={styles.send}>
               <AppIcon name="chevron-right" size={22} color={Palette.ink} />
             </Pressable>
@@ -576,6 +576,7 @@ export function ClientSpace({ view, onCart, preview }: { view?: TabId; onCart?: 
           <Text style={styles.kicker}>{data?.here ? `Chambre ${data.here.room_number}` : 'Nettoyage'}</Text>
           {data?.here ? (
             <GoldBtn
+              nativeID="guide-clean-ask"
               block
               disabled={!!data.cleaning || saving}
               icon="droplet"
@@ -601,11 +602,11 @@ export function ClientSpace({ view, onCart, preview }: { view?: TabId; onCart?: 
               </Pressable>
             ))}
           </ScrollView>
-          {groups.map(([category, list]) => (
+          {groups.map(([category, list], groupIndex) => (
             <View key={category} style={styles.stack}>
               <Text style={styles.kicker}>{category}</Text>
               <View style={styles.grid}>
-                {list.map((dish) => {
+                {list.map((dish, dishIndex) => {
                   const qty = cart[dish.id] || 0;
                   return (
                     <View key={dish.id} style={[styles.roomCard, { width: cols === 2 ? '48.5%' : cols === 3 ? '31.5%' : '23.5%' }, qty ? styles.dishOn : null]}>
@@ -618,6 +619,7 @@ export function ClientSpace({ view, onCart, preview }: { view?: TabId; onCart?: 
                         {dish.description ? <Text style={styles.meta} numberOfLines={2}>{dish.description}</Text> : null}
                         <Text style={styles.roomPrice}>{money(dish.price)}</Text>
                         <GoldBtn
+                          nativeID={groupIndex === 0 && dishIndex === 0 ? 'guide-client-add' : undefined}
                           block
                           tiny
                           icon={preview ? 'user' : 'cart'}
@@ -687,6 +689,7 @@ export function ClientSpace({ view, onCart, preview }: { view?: TabId; onCart?: 
             <View style={styles.helloRow}>
               <Text style={styles.price}>{money(cartTotal)}</Text>
               <GoldBtn
+                nativeID="guide-client-send"
                 compact
                 icon={mode === 'chambre' && data?.here ? 'bed' : 'wallet'}
                 label={saving ? 'Envoi…' : mode === 'chambre' && data?.here ? 'Ajouter à la note' : 'Commander'}
@@ -938,9 +941,9 @@ export function ClientBoard() {
       </View>
 
       <View style={styles.quick}>
-        <GoldBtn compact icon="bed" label="Chambres" onPress={() => router.push('/browse')} />
-        <GoldBtn compact icon="restaurant" label="Commander" onPress={() => router.push('/table')} />
-        <GoldBtn compact icon="envelope" label="Réception" onPress={() => router.push('/desk')} />
+        <GoldBtn nativeID="guide-client-rooms" compact icon="bed" label="Chambres" onPress={() => router.push('/browse')} />
+        <GoldBtn nativeID="guide-client-order" compact icon="restaurant" label="Commander" onPress={() => router.push('/table')} />
+        <GoldBtn nativeID="guide-client-desk" compact icon="envelope" label="Réception" onPress={() => router.push('/desk')} />
       </View>
 
       <View style={styles.panel}>

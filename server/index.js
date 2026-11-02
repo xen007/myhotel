@@ -408,6 +408,38 @@ const WEB_DIST = path.join(
   'dist',
 );
 
+function serveDocumentation(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  if (url.pathname !== '/documentation' && !url.pathname.startsWith('/documentation/')) return false;
+  const root = path.resolve(__dirname, '..', 'documentation');
+  let rel = decodeURIComponent(url.pathname.replace(/^\/documentation\/?/, ''));
+  if (!rel || rel.endsWith('/')) rel += 'index.html';
+  const filePath = path.resolve(root, rel);
+  if (filePath !== root && !filePath.startsWith(root + path.sep)) return false;
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Documentation introuvable.');
+    return true;
+  }
+  const types = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+  };
+  res.writeHead(200, { 'Content-Type': types[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+  fs.createReadStream(filePath).pipe(res);
+  return true;
+}
+
 function serveWeb(req, res) {
   if (
     req.method !== 'GET' &&
@@ -1765,6 +1797,10 @@ function createRequestHandler(db) {
       | fonctionner comme auparavant.
       |
       */
+
+      if (serveDocumentation(req, res)) {
+        return;
+      }
 
       if (serveWeb(req, res)) {
         return;

@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Redirect } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '@/components/box-icon';
 import { FilterBar } from '@/components/hotel/filter-bar';
@@ -68,6 +68,17 @@ export default function PosScreen() {
     if (!token) return;
     void pmsGet<CompanyProfile>(token, 'company').then(setCompany).catch(() => undefined);
   }, [token]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-cart') setCartOpen(true);
+      if (action === 'close-cart') setCartOpen(false);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, []);
 
   const visibleProducts = useMemo(() => {
     const q = productQuery.trim().toLowerCase();
@@ -182,6 +193,7 @@ export default function PosScreen() {
       right={
         <View style={styles.titleTools}>
           <Pressable
+            nativeID="guide-cart"
             accessibilityLabel="Panier"
             onPress={() => {
               setCartOpen((open) => !open);
@@ -197,6 +209,7 @@ export default function PosScreen() {
             ) : null}
           </Pressable>
           <GoldBtn
+            nativeID="guide-pos-history"
             compact
             icon="time"
             label="Historique"
@@ -209,6 +222,7 @@ export default function PosScreen() {
             }}
           />
           <GoldBtn
+            nativeID="guide-pos-invoices"
             compact
             icon="receipt"
             label="Factures"
@@ -220,6 +234,7 @@ export default function PosScreen() {
             }}
           />
           <GoldBtn
+            nativeID="guide-pos-notes"
             compact
             icon="bed"
             label={openNotes.length ? `Notes ${openNotes.length}` : 'Notes'}
@@ -234,14 +249,15 @@ export default function PosScreen() {
       }>
       <View style={styles.shop}>
         <View style={styles.catalogCol}>
-          <FilterBar query={productQuery} onQuery={setProductQuery} queryPlaceholder="Rechercher un produit..." />
+          <FilterBar searchId="guide-pos-search" query={productQuery} onQuery={setProductQuery} queryPlaceholder="Rechercher un produit..." />
           <View style={styles.catalog}>
-            {visibleProducts.map((item) => {
+            {visibleProducts.map((item, productIndex) => {
               const inCart = cart[item.id] || 0;
               const empty = Number(item.stock) <= 0;
               return (
                 <Pressable
                   key={item.id}
+                  nativeID={productIndex === 0 ? 'guide-product' : undefined}
                   onPress={() => add(item)}
                   disabled={empty}
                   style={[styles.product, empty && styles.productOff, inCart ? styles.productOn : null]}>
@@ -335,6 +351,7 @@ export default function PosScreen() {
               <View style={styles.payRow}>
                 <Text style={styles.payTotal}>{money(cartTotal)}</Text>
                 <GoldBtn
+                  nativeID="guide-pay"
                   compact
                   icon={onAccount ? 'bed' : 'wallet'}
                   label={saving ? 'Enregistrement…' : onAccount ? 'Porter sur la note' : 'Encaisser'}

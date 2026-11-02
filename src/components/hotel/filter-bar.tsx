@@ -47,6 +47,7 @@ export function FilterBar({
   status,
   onStatus,
   statuses,
+  searchId,
 }: {
   query: string;
   onQuery: (value: string) => void;
@@ -58,10 +59,11 @@ export function FilterBar({
   onStatus?: (value: string) => void;
   statuses?: FilterOption[];
   stackSearch?: boolean;
+  searchId?: string;
 }) {
   return (
     <View style={styles.bar}>
-      <TextInput placeholder={queryPlaceholder} value={query} onChangeText={onQuery} style={styles.search} />
+      <TextInput nativeID={searchId} placeholder={queryPlaceholder} value={query} onChangeText={onQuery} style={styles.search} />
       {categories && onCategory && category !== undefined ? (
         <FilterSelect value={category} onChange={onCategory} options={categories} />
       ) : null}
@@ -69,7 +71,7 @@ export function FilterBar({
         <FilterSelect value={status} onChange={onStatus} options={statuses} />
       ) : null}
       <View style={styles.filterBtn}>
-        <GoldBtn compact icon="search" label="Filtrer" onPress={() => undefined} />
+        <GoldBtn nativeID="guide-filter" compact icon="search" label="Filtrer" onPress={() => undefined} />
       </View>
     </View>
   );

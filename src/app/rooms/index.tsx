@@ -165,10 +165,10 @@ export default function RoomsScreen() {
       right={
         <View style={styles.titleTools}>
           {canCategories ? (
-            <GoldBtn compact icon="grid-alt" label="Catégorie" onPress={() => void openCategories()} />
+            <GoldBtn nativeID="guide-room-category" compact icon="grid-alt" label="Catégorie" onPress={() => void openCategories()} />
           ) : null}
           {canManage ? (
-            <GoldBtn compact icon="plus" label="Ajouter" onPress={() => router.push('/rooms/form' as Href)} />
+            <GoldBtn nativeID="guide-room-add" compact icon="plus" label="Ajouter" onPress={() => router.push('/rooms/form' as Href)} />
           ) : null}
         </View>
       }>
@@ -197,8 +197,8 @@ export default function RoomsScreen() {
         ]}
       />
       <View style={styles.grid}>
-        {visible.map((room) => (
-          <View key={room.id} style={[styles.card, { width: cardWidth }]}>
+        {visible.map((room, index) => (
+          <View nativeID={index === 0 ? 'guide-room-card' : undefined} key={room.id} style={[styles.card, { width: cardWidth }]}>
             <View style={styles.photoWrap}>
               <Pressable onPress={() => router.push(`/rooms/${room.id}` as Href)}>
                 <Image source={{ uri: room.photo }} style={styles.photo} contentFit="cover" />
@@ -239,14 +239,14 @@ export default function RoomsScreen() {
               </Text>
               <Text style={styles.price}>{money(room.price_night)} / nuit</Text>
               <View style={styles.actions}>
-                <GoldBtn block tiny icon="show" label="Voir" onPress={() => router.push(`/rooms/${room.id}` as Href)} />
+                <GoldBtn nativeID={index === 0 ? 'guide-room-see' : undefined} block tiny icon="show" label="Voir" onPress={() => router.push(`/rooms/${room.id}` as Href)} />
                 {canManage ? (
                   <>
-                    <GoldBtn block tiny icon="edit" label="Modifier" onPress={() => router.push(`/rooms/form?id=${room.id}` as Href)} />
+                    <GoldBtn nativeID={index === 0 ? 'guide-room-edit' : undefined} block tiny icon="edit" label="Modifier" onPress={() => router.push(`/rooms/form?id=${room.id}` as Href)} />
                     {room.status === 'hors_service' ? (
                       <GoldBtn block tiny icon="check-circle" label="En service" onPress={() => setPendingStatus({ room, next: 'disponible' })} />
                     ) : (
-                      <GoldBtn block tiny icon="hide" label="Hors service" variant="ink" onPress={() => setPendingOut(room)} />
+                      <GoldBtn nativeID={index === 0 ? 'guide-room-off' : undefined} block tiny icon="hide" label="Hors service" variant="ink" onPress={() => setPendingOut(room)} />
                     )}
                   </>
                 ) : null}

@@ -75,10 +75,10 @@ export default function OrdersScreen() {
         ))}
       </View>
       <View style={styles.grid}>
-        {orders.map((order) => {
+        {orders.map((order, index) => {
           const lines = order.items ?? [];
           return (
-            <View key={order.id} style={[styles.ticket, { width: cols === 1 ? '100%' : cols === 2 ? '48%' : '31.5%' }]}>
+            <View nativeID={index === 0 ? 'guide-order-card' : undefined} key={order.id} style={[styles.ticket, { width: cols === 1 ? '100%' : cols === 2 ? '48%' : '31.5%' }]}>
               <View style={styles.head}>
                 <View style={styles.copy}>
                   <Text style={styles.name} numberOfLines={1}>{order.guest_name}</Text>
@@ -101,6 +101,7 @@ export default function OrdersScreen() {
                 <Text style={styles.total}>{money(order.total)}</Text>
                 {order.status === 'reglee' ? null : (
                   <GoldBtn
+                    nativeID={index === 0 ? 'guide-order-next' : undefined}
                     compact
                     icon={order.status === 'servie' ? 'wallet' : 'restaurant'}
                     label={order.status === 'commandee' ? 'En cuisine' : order.status === 'preparation' ? 'Servir' : order.pay === 'especes' ? 'Encaisser' : 'Clôturer'}

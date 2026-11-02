@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { AppIcon } from '@/components/box-icon';
@@ -170,6 +170,17 @@ export function DishBoard({ mode, title: titleOverride }: { mode: 'food' | 'drin
     setForm({ ...EMPTY, category: activeCategories[0]?.name || '' });
   }
 
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onGuide = (event: Event) => {
+      const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === 'open-dish') openCreate();
+      if (action === 'close-dish') setForm(null);
+    };
+    window.addEventListener('myhotel-guide', onGuide);
+    return () => window.removeEventListener('myhotel-guide', onGuide);
+  }, [activeCategories]);
+
   async function saveCategory() {
     if (!token || saving) return;
     setSaving(true);
@@ -230,8 +241,8 @@ export function DishBoard({ mode, title: titleOverride }: { mode: 'food' | 'drin
       right={
         mode === 'daily' ? undefined : (
           <View style={styles.headBtns}>
-            <GoldBtn compact icon="food-menu" label="Catégorie" variant="ghost" onPress={() => { setFormError(null); setCategoryName(''); setEditingCategory(null); setCatsOpen(true); }} />
-            <GoldBtn compact icon="plus" label={mode === 'drink' ? 'Ajouter' : 'Publier'} onPress={openCreate} />
+            <GoldBtn nativeID="guide-dish-category" compact icon="food-menu" label="Catégorie" variant="ghost" onPress={() => { setFormError(null); setCategoryName(''); setEditingCategory(null); setCatsOpen(true); }} />
+            <GoldBtn nativeID="guide-dish-add" compact icon="plus" label={mode === 'drink' ? 'Ajouter' : 'Publier'} onPress={openCreate} />
           </View>
         )
       }>
@@ -244,7 +255,7 @@ export function DishBoard({ mode, title: titleOverride }: { mode: 'food' | 'drin
         statuses={filterStatuses}
       />
       <View style={styles.grid}>
-        {items.map((dish) => {
+        {items.map((dish, index) => {
           const onDay = Number(dish.of_day) === 1 && String(dish.day_date || '').slice(0, 10) === today;
           const available = Number(dish.available ?? 1) === 1;
           const sold = Number(dish.sold_qty || 0);
@@ -276,13 +287,13 @@ export function DishBoard({ mode, title: titleOverride }: { mode: 'food' | 'drin
                 <View style={styles.actions}>
                   {mode === 'daily' ? (
                     <>
-                      <GoldBtn compact icon="edit" label="Modifier" variant="ghost" onPress={() => { setFormError(null); setForm({ id: dish.id, name: dish.name, category: dish.category, price: String(dish.price), description: dish.description || '', photo: dish.photo || '' }); }} />
-                      <GoldBtn compact icon="x-circle" label="Annuler" variant="ghost" onPress={() => void toggleDay(dish, false)} />
+                      <GoldBtn nativeID={index === 0 ? 'guide-dish-edit' : undefined} compact icon="edit" label="Modifier" variant="ghost" onPress={() => { setFormError(null); setForm({ id: dish.id, name: dish.name, category: dish.category, price: String(dish.price), description: dish.description || '', photo: dish.photo || '' }); }} />
+                      <GoldBtn nativeID={index === 0 ? 'guide-dish-off' : undefined} compact icon="x-circle" label="Annuler" variant="ghost" onPress={() => void toggleDay(dish, false)} />
                     </>
                   ) : (
                     <>
-                      <GoldBtn compact icon="star" label="Menu du jour" variant={onDay ? 'gold' : 'ghost'} onPress={() => void toggleDay(dish, !onDay)} />
-                      <GoldBtn compact icon="edit" label="Modifier" variant="ghost" onPress={() => { setFormError(null); setForm({ id: dish.id, name: dish.name, category: dish.category, price: String(dish.price), description: dish.description || '', photo: dish.photo || '' }); }} />
+                      <GoldBtn nativeID={index === 0 ? 'guide-dish-day' : undefined} compact icon="star" label="Menu du jour" variant={onDay ? 'gold' : 'ghost'} onPress={() => void toggleDay(dish, !onDay)} />
+                      <GoldBtn nativeID={index === 0 ? 'guide-dish-edit' : undefined} compact icon="edit" label="Modifier" variant="ghost" onPress={() => { setFormError(null); setForm({ id: dish.id, name: dish.name, category: dish.category, price: String(dish.price), description: dish.description || '', photo: dish.photo || '' }); }} />
                       <GoldBtn compact icon={available ? 'hide' : 'show'} label={available ? 'Indisponible' : 'Disponible'} variant={available ? 'ghost' : 'ink'} onPress={() => void toggleAvailable(dish)} />
                     </>
                   )}

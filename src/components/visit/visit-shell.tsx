@@ -143,7 +143,7 @@ function VisitShellFrame({
   const nav = VISIT_NAV.map((item) => {
     const on = !item.href.includes('?') && pathname === pathOf(item.href);
     return (
-      <Pressable key={item.label} onPress={() => go(item.href)} style={[styles.link, on && styles.linkOn]}>
+      <Pressable nativeID={`guide-nav-${pathOf(item.href).replace(/\//g, '')}`} key={item.label} onPress={() => go(item.href)} style={[styles.link, on && styles.linkOn]}>
         <Text style={[styles.linkText, on && styles.linkTextOn]} numberOfLines={1}>{item.label}</Text>
       </Pressable>
     );
@@ -410,7 +410,7 @@ function VisitShellFrame({
           {MOBILE_TABS.map((item) => {
             const on = pathname === pathOf(item.href) || (item.href !== '/welcome' && pathname.startsWith(pathOf(item.href)));
             return (
-              <Pressable key={item.href} onPress={() => go(item.href)} style={styles.mobileTab} accessibilityLabel={item.label}>
+              <Pressable nativeID={`guide-tab-${pathOf(item.href).replace(/\//g, '')}`} key={item.href} onPress={() => go(item.href)} style={styles.mobileTab} accessibilityLabel={item.label}>
                 <View style={[styles.mobileIcon, on && styles.mobileIconOn]}>
                   <AppIcon name={item.icon} size={20} color={Palette.ink} />
                 </View>

@@ -308,6 +308,7 @@ function ManagerReports() {
       right={
         <>
           <GoldBtn
+            nativeID="guide-print"
             compact
             icon="printer"
             label="Imprimer"
@@ -332,7 +333,7 @@ function ManagerReports() {
           />
         </>
       }>
-      <View style={styles.toolbar}>
+      <View nativeID="guide-report-filters" style={styles.toolbar}>
         <View style={styles.kindWrap}>
           <FilterSelect fill value={kind} onChange={setKind} options={KINDS} />
         </View>

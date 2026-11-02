@@ -51,16 +51,26 @@ Dans hPanel → **Git** (ou **Node.js** → Git) :
 
 Chaque push sur `main` peut redéployer le site.
 
-### 3. Commandes de build / démarrage
+### 3. Réglages du déploiement Git Hostinger
+
+Dans les paramètres du site Git (`*.hostingersite.com`) :
 
 - Install : `npm install`
 - Build : `npm run build`
-- Start : `npm run serve` (équivalent : `node server/index.js`)
+- **Dossier de sortie (output directory) : `dist`**
 - Node : `20` ou plus
 
-L’API sert aussi le dossier `dist/` généré par le build.
+Si Hostinger propose un type **Node.js** (recommandé pour l’API) :
 
-### 4. Variables d’environnement
+- Start : `npm run serve`
+
+Sans Node, le site statique s’affiche mais **l’API et MySQL ne tournent pas**.
+
+L’erreur `No output directory found after build` signifie que le champ « dossier de sortie » n’est pas `dist` (ou `build`). Le build crée `dist/`, `build/` et `out/`.
+
+### 4. Faut-il une base de données ?
+
+**Oui**, si vous voulez l’application complète (connexion, chambres, restaurant). Créez une base MySQL dans hPanel, puis renseignez `MYSQL_URL`. Sans base, le site vitrine peut s’afficher, mais l’espace hôtel ne fonctionnera pas.
 
 ```
 MYSQL_URL=mysql://USER:PASSWORD@HOST:3306/NOM_BASE

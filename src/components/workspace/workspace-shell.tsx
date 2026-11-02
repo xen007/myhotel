@@ -12,7 +12,7 @@ import { RightDrawer } from '@/components/nav/right-drawer';
 import { NotificationsPanel } from '@/components/profile/notifications-panel';
 import { ProfilePanel } from '@/components/profile/profile-panel';
 import { Brand } from '@/constants/config';
-import { CLIENT_LINKS, isStaffRole, linksFor, ROLE_LABEL } from '@/constants/roles';
+import { CLIENT_LINKS, isStaffRole, linksFor, ownerNavBlocks, ROLE_LABEL } from '@/constants/roles';
 import { Breakpoints, Palette } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useNotifications } from '@/hooks/use-notifications';
@@ -50,7 +50,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     router.replace('/welcome');
   }
 
-  const navItems = links.map((item) => {
+  function navLink(item: (typeof links)[number]) {
     const active = pathname === item.href || (item.href !== '/home' && pathname.startsWith(item.href));
     return (
       <Pressable key={item.href} onPress={() => go(item.href)} style={[styles.navItem, active && styles.navItemOn]}>
@@ -60,7 +60,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </Text>
       </Pressable>
     );
-  });
+  }
+
+  const navItems =
+    user?.role === 'owner'
+      ? ownerNavBlocks(links).map((block) => (
+          <View key={block.title} style={styles.navBlock}>
+            <Text style={styles.navSection}>{block.title}</Text>
+            {block.items.map(navLink)}
+          </View>
+        ))
+      : links.map(navLink);
 
   const sidebar = (
     <View style={styles.sidebarInner}>
@@ -209,7 +219,19 @@ const styles = StyleSheet.create({
   },
   brand: { color: Palette.gold, fontWeight: '800', fontSize: 16, letterSpacing: 0.5 },
   role: { color: Palette.white, opacity: 0.65, fontSize: 12, marginTop: 2 },
-  navList: { gap: 4, paddingBottom: 20 },
+  navList: { gap: 10, paddingBottom: 20 },
+  navBlock: { gap: 4 },
+  navSection: {
+    color: Palette.gold,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
+    opacity: 0.9,
+  },
   navItem: {
     flexDirection: 'row',
     alignItems: 'center',

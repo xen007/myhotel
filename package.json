@@ -55,7 +55,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "expo export -p web",
-    "build": "expo export -p web",
+    "build": "expo export -p web --output-dir dist && node scripts/prepare-hostinger.js",
     "serve": "node server/index.js",
     "lint": "expo lint"
   },

@@ -69,6 +69,29 @@ export const CLIENT_LINKS: WorkspaceLink[] = [
 const RESTAURANT_NAV = ['/home', '/daily', '/orders', '/service', '/drinks', '/restaurant', '/kitchen', '/messages'];
 const OWNER_RESTAURANT = ['/daily', '/orders', '/service', '/drinks', '/restaurant', '/kitchen'];
 
+export const OWNER_NAV_BLOCKS: { title: string; hrefs: string[] }[] = [
+  { title: 'Vue d’ensemble', hrefs: ['/home'] },
+  { title: 'Réception', hrefs: ['/reservations', '/clients', '/pos', '/rooms', '/reports'] },
+  { title: 'Entretien', hrefs: ['/housekeeping', '/issues', '/schedule'] },
+  { title: 'Restaurant', hrefs: ['/daily', '/orders', '/service', '/drinks', '/restaurant', '/kitchen'] },
+  { title: 'Hôtel', hrefs: ['/stock', '/messages'] },
+  { title: 'Direction', hrefs: ['/staff', '/payroll', '/settings'] },
+];
+
+export function ownerNavBlocks(links: WorkspaceLink[]) {
+  const used = new Set<string>();
+  const blocks = OWNER_NAV_BLOCKS.map((block) => {
+    const items = block.hrefs
+      .map((href) => links.find((item) => item.href === href))
+      .filter((item): item is WorkspaceLink => !!item);
+    items.forEach((item) => used.add(item.href));
+    return { title: block.title, items };
+  }).filter((block) => block.items.length);
+  const rest = links.filter((item) => !used.has(item.href));
+  if (rest.length) blocks.push({ title: 'Autres', items: rest });
+  return blocks;
+}
+
 export function linksFor(role?: string | null): WorkspaceLink[] {
   if (!isStaffRole(role)) return [];
   const links: WorkspaceLink[] = WORKSPACE_LINKS.filter((item) => item.roles.includes(role)).map((item) =>
